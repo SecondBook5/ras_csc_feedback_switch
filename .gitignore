@@ -1,0 +1,22 @@
+# Project-specific virtual environment
+.venv_ras-csc-switch-mm/
+
+# Python cache files
+__pycache__/
+*.pyc
+
+# Jupyter/IPython noise
+.ipynb_checkpoints/
+*.ipynb~
+
+# OS cruft
+.DS_Store
+
+# Data directories (keep structure, ignore contents)
+data/raw/*
+data/interim/*
+data/processed/*
+
+# VSCode / IDE settings (if you use them)
+.vscode/
+.idea/

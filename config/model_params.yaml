@@ -1,0 +1,14 @@
+# Parameter sets for Ras–CSC feedback model
+# - Use this file to store k_C_base, k_V_C, k_L_V, etc. for:
+#   model_A_feedback and model_B_no_feedback
+
+default_model: model_A_feedback
+
+models:
+  model_A_feedback:
+    description: "Full Ras–CSC–angiogenesis–leptin feedback"
+    # fill in once calibration is done
+    params: {}
+  model_B_no_feedback:
+    description: "Feedback removed (control model)"
+    params: {}
