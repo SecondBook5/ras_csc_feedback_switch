@@ -1,14 +1,73 @@
 # Parameter sets for Ras–CSC feedback model
-# - Use this file to store k_C_base, k_V_C, k_L_V, etc. for:
-#   model_A_feedback and model_B_no_feedback
+# Generated from RNA-seq derivation script
 
 default_model: model_A_feedback
 
 models:
   model_A_feedback:
-    description: "Full Ras–CSC–angiogenesis–leptin feedback"
-    # fill in once calibration is done
-    params: {}
+    description: "Full Ras–CSC–angiogenesis–leptin feedback (Malignant Switch)"
+    params:
+      # Input
+      f_ras: 1.0
+
+      # Equation 1: CSC Dynamics
+      k_C_ras: 0.0526    # Baseline Ras drive (Weak)
+      k_C_TGFb: 0.1000   # Direct TGFb contribution (Minor)
+      K_C: 0.5000        # Switch threshold
+      n_C: 4.0           # Switch steepness
+      k_C_M: 19.9446     # mTOR Feedback Strength (MASSIVE - The Driver)
+      k_C_deg: 1.0
+
+      # Equation 2: Angiogenesis
+      k_A_ras: 0.0000    # Ras alone doesn't drive angio
+      k_A_C: 1.0000      # CSCs drive angio
+      k_A_deg: 1.0
+
+      # Equation 3: TGFb
+      k_T_A: 1.0000      # Angio brings TGFb sources
+      k_T_C: 0.0000      # Tumor doesn't secrete TGFb
+      k_T_deg: 1.0
+
+      # Equation 4: Receptor (Lepr)
+      k_R_prod: 0.9500   # Max receptor level
+      K_R: 0.5000        # Induction threshold
+      p_R: 4.0           # Induction steepness
+      k_R_deg: 1.0
+
+      # Equation 5: Leptin (QSS)
+      L_sys: 0.1000      # Systemic baseline
+      k_L_A: 1.0000      # Angio-delivered Leptin
+
+      # Equation 6: mTOR (QSS)
+      k_M_max: 0.9500    # Max activity
+      K_M: 0.5025        # Activation threshold
+      q_M: 4.0           # Activation steepness
+
   model_B_no_feedback:
-    description: "Feedback removed (control model)"
-    params: {}
+    description: "Feedback removed (Control/Inhibited State)"
+    params:
+      # Copy all params from Model A...
+      f_ras: 1.0
+      k_C_ras: 0.0526
+      k_C_TGFb: 0.1000
+      K_C: 0.5000
+      n_C: 4.0
+      k_C_deg: 1.0
+      k_A_ras: 0.0000
+      k_A_C: 1.0000
+      k_A_deg: 1.0
+      k_T_A: 1.0000
+      k_T_C: 0.0000
+      k_T_deg: 1.0
+      k_R_prod: 0.9500
+      K_R: 0.5000
+      p_R: 4.0
+      k_R_deg: 1.0
+      L_sys: 0.1000
+      k_L_A: 1.0000
+      k_M_max: 0.9500
+      K_M: 0.5025
+      q_M: 4.0
+      
+      # ...EXCEPT the Feedback term, which we kill to simulate inhibition
+      k_C_M: 0.0000      # FEEDBACK BROKEN
