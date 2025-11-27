@@ -14,9 +14,9 @@ __pycache__/
 
 # Data directories (keep structure, ignore contents)
 data/raw/*
-data/interim/*
-data/processed/*
+
 
 # VSCode / IDE settings (if you use them)
 .vscode/
 .idea/
+
