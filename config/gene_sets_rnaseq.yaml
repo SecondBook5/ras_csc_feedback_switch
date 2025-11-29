@@ -1,0 +1,34 @@
+TGFb_bulk:
+  - Tgfb1
+  - Tgfb2
+  - Tgfb3
+  - Smad2
+  - Smad3
+  - Smad4
+  - Smad7
+
+mTOR_bulk:
+  - Mtor
+  - Rptor
+  - Rictor
+  - Rps6kb1
+  - Eif4ebp1
+  - Akt1
+  - Pten
+
+Angio_bulk:
+  - Vegfa
+  - Vegfb
+  - Kdr
+  - Flt1
+  - Angpt1
+  - Angpt2
+  - Tek
+
+CSC_bulk:
+  - Sox2
+  - Pou5f1     # Oct4
+  - Nanog
+  - Krt14
+  - Cd44
+  - Lgr5
