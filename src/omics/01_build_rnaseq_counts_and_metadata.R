@@ -1,16 +1,24 @@
 #!/usr/bin/env Rscript
 
-#---------------------------------------------
-# build_rnaseq_counts_and_metadata.R
+#-----------------------------------------------------------
+# 01_build_rnaseq_counts_and_metadata.R
+#
+# Pipeline step: OPTIONAL (counts-only)
 #
 # Goal:
 #   1) Read all GSE190411 count matrices
 #   2) Merge into a single genes x samples matrix
-#   3) Auto-generate sample metadata using patterns
+#   3) Auto-generate a *provisional* metadata table
 #   4) Write:
 #        - data/interim/rnaseq/GSE190411_all_counts.tsv
-#        - data/interim/rnaseq/sample_metadata_GSE190411.csv
-#---------------------------------------------
+#        - data/interim/rnaseq/sample_metadata_GSE190411.csv  (will be
+#          overwritten by step 02; use this only for quick QC)
+#
+# Notes:
+#   - This step is NOT required for the Ras–CSC model calibration.
+#   - It exists to give you a unified counts matrix for DESeq2 or other
+#     count-based analyses.
+#-----------------------------------------------------------
 
 suppressPackageStartupMessages({
   library(readr)

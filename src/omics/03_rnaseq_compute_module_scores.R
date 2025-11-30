@@ -1,23 +1,28 @@
 #!/usr/bin/env Rscript
 
-#===========================================================
-# rnaseq_compute_module_scores.R
+# ===========================================================
+# 03_rnaseq_compute_module_scores.R
+#
+# Pipeline step: MAIN STEP 2 (module scores)
 #
 # Purpose:
-#   1) Load log2-transformed expression matrices:
+#   1) Load log2-transformed expression matrices from step 02:
 #        - data/interim/rnaseq/bl6_expression.tsv
 #        - data/interim/rnaseq/pap_scc_expression.tsv
 #        - data/interim/rnaseq/pdv_expression.tsv
-#   2) Load sample metadata:
+#   2) Load sample metadata from step 02:
 #        - data/interim/rnaseq/sample_metadata_GSE190411.csv
-#   3) Load gene sets from:
+#   3) Load gene sets:
 #        - config/gene_sets_rnaseq.yaml
-#   4) For each dataset separately:
+#   4) For each dataset (Bl6, PAP_SCC, PDV):
 #        - Z-score each gene across samples.
 #        - Compute module score per sample = mean z-score of genes in set.
 #   5) Write:
 #        - data/processed/rnaseq/module_scores_by_sample.csv
-#===========================================================
+#
+# Notes:
+#   - Output feeds directly into model calibration (Python side).
+# ===========================================================
 
 suppressPackageStartupMessages({
   library(readr)

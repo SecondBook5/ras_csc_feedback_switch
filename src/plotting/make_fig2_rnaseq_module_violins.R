@@ -1,10 +1,10 @@
 #!/usr/bin/env Rscript
 
-#===========================================================
-# plot_rnaseq_module_violins.R
+# ===========================================================
+# make_fig2_rnaseq_module_violins.R
 #
-# Violin + box + jitter panels for module scores by
-# dataset and condition.
+# Figure 2: Violin + box + jitter plots of RNA-seq module
+# scores (TGFb, mTOR, Angio, CSC) by condition and dataset.
 #
 # Input:
 #   data/processed/rnaseq/module_scores_by_sample.csv
@@ -12,7 +12,7 @@
 # Output:
 #   figures/main/fig2_rnaseq_module_violins.pdf
 #   figures/main/fig2_rnaseq_module_violins.png
-#===========================================================
+# ===========================================================
 
 suppressPackageStartupMessages({
   library(readr)

@@ -1,25 +1,29 @@
 #!/usr/bin/env Rscript
 
-#===========================================================
-# rnaseq_build_expression_and_metadata.R
+# ===========================================================
+# 02_rnaseq_build_expression_and_metadata.R
+#
+# Pipeline step: MAIN STEP 1 (expression + canonical metadata)
 #
 # Purpose:
-#   1) Read three GSE190411 RNA-Seq expression matrices:
-#        - Bl6 Norm/Pap/SCC (transcript_id = ENSEMBLID_Symbol)
+#   1) Read three GSE190411 RNA-Seq matrices:
+#        - Bl6 Norm/Pap/SCC (ENSEMBLID_Symbol)
 #        - PAP/SCC (gene symbols)
 #        - PDV WT / LeprKO (gene symbols)
 #   2) Convert each to gene_symbol x sample matrix.
 #   3) Log2-transform values (log2(x + 1)).
 #   4) Write:
-#        data/interim/rnaseq/bl6_expression.tsv
-#        data/interim/rnaseq/pap_scc_expression.tsv
-#        data/interim/rnaseq/pdv_expression.tsv
-#   5) Auto-generate sample_metadata_GSE190411.csv from column names.
+#        - data/interim/rnaseq/bl6_expression.tsv
+#        - data/interim/rnaseq/pap_scc_expression.tsv
+#        - data/interim/rnaseq/pdv_expression.tsv
+#   5) Build the *canonical* sample metadata used downstream:
+#        - data/interim/rnaseq/sample_metadata_GSE190411.csv
 #
 # Notes:
-#   - These are quantified (TPM/FPKM-like) values, not raw counts.
-#   - We treat them as continuous expression, not DESeq2-style counts.
-#===========================================================
+#   - This is the upstream for 03_rnaseq_compute_module_scores.R.
+#   - If 01_... is run, its metadata is overwritten here to keep the
+#     module-scoring logic consistent.
+# ===========================================================
 
 suppressPackageStartupMessages({
   library(readr)

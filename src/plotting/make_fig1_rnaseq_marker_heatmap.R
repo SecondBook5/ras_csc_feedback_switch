@@ -1,15 +1,25 @@
 #!/usr/bin/env Rscript
 
-#===========================================================
-# plot_rnaseq_marker_heatmap.R
+# ===========================================================
+# make_fig1_rnaseq_marker_heatmap.R
 #
-# Build a marker-gene pheatmap for TGFb, mTOR, Angio, CSC
+# Figure 1: Marker-gene pheatmap for TGFb, mTOR, Angio, CSC
 # across all bulk RNA-Seq samples.
 #
+# Inputs:
+#   - data/interim/rnaseq/bl6_expression.tsv
+#   - data/interim/rnaseq/pap_scc_expression.tsv
+#   - data/interim/rnaseq/pdv_expression.tsv
+#   - data/interim/rnaseq/sample_metadata_GSE190411.csv
+#   - config/gene_sets_rnaseq.yaml
+#
 # Outputs:
-#   figures/main/fig1_rnaseq_marker_heatmap.pdf
-#   figures/main/fig1_rnaseq_marker_heatmap.png
-#===========================================================
+#   - figures/main/fig1_rnaseq_marker_heatmap.pdf
+#   - figures/main/fig1_rnaseq_marker_heatmap.png
+#
+# Notes:
+#   - Assumes 02_ and 03_ RNA-seq steps have been run.
+# ===========================================================
 
 suppressPackageStartupMessages({
   library(readr)
