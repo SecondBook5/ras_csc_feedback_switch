@@ -1,34 +1,178 @@
 TGFb_bulk:
-  - Tgfb1
-  - Tgfb2
-  - Tgfb3
-  - Smad2
-  - Smad3
-  - Smad4
-  - Smad7
-
+- Acvr1
+- Acvr2b
+- Acvrl1
+- Agrn
+- Cd109
+- Cd36
+- Chrdl1
+- Ctgf
+- Eng
+- Hyal2
+- Id1
+- Itgav
+- Lrrc32
+- Ltbp1
+- Ltbp3
+- Ltbp4
+- Nrros
+- Serpine1
+- Smad2
+- Smad3
+- Smad4
+- Smad7
+- Tgfb1
+- Tgfb2
+- Tgfb3
+- Tgfbr1
+- Tgfbr2
+- Tgfbr3
+- Tgfbr3l
+- Thbs1
+- Tsku
+- Twsg1
+- Vasn
+- Wfikkn1
+- Wfikkn2
 mTOR_bulk:
-  - Mtor
-  - Rptor
-  - Rictor
-  - Rps6kb1
-  - Eif4ebp1
-  - Akt1
-  - Pten
-
+- Abl2
+- Acvr1
+- Adcy6
+- Adcy7
+- Akt1
+- Akt3
+- Arhgef2
+- Arhgef28
+- Axl
+- Camkk2
+- Ccnd1
+- Cdc42bpa
+- Cdk18
+- Csnk1e
+- Dapk1
+- Dgkh
+- Dok1
+- Ephb1
+- Ephb2
+- Frk
+- Gna12
+- Gnai2
+- Hspb1
+- Igfbp3
+- Ikbke
+- Lat2
+- Lyn
+- Mapk11
+- Mast2
+- Mlkl
+- Pak1
+- Pak2
+- Pdgfra
+- Pea15a
+- Peak1
+- Phka1
+- Plcb4
+- Plcd3
+- Prkd3
+- Ptk2
+- Ptk7
+- Pxk
+- Rapgef3
+- Rps6ka1
+- Rps6ka2
+- Smad7
+- Spsb1
+- Src
+- St3gal1
+- Stk26
+- Stk39
+- Tesk1
+- Tgfbr2
+- Tiam2
+- Trio
+- Twf2
+- Ulk2
+- Vav2
+- Wnt5a
 Angio_bulk:
-  - Vegfa
-  - Vegfb
-  - Kdr
-  - Flt1
-  - Angpt1
-  - Angpt2
-  - Tek
-
+- Ackr3
+- Arhgap22
+- Ccl2
+- Clic4
+- Col4a1
+- Col8a1
+- Ecm1
+- Elk3
+- Epgn
+- Ephb1
+- Ephb2
+- Flna
+- Hoxa7
+- Lepr
+- Mcam
+- Mfge8
+- Mmp14
+- Myh9
+- Pecam1
+- Plau
+- Plcd3
+- Ptk2
+- Ramp1
+- Rapgef3
+- Rbpj
+- Rhob
+- Tgfa
+- Tnfaip2
+- Tspan12
+- Vav2
+- Vezf1
+- Wnt7a
 CSC_bulk:
-  - Sox2
-  - Pou5f1     # Oct4
-  - Nanog
-  - Krt14
-  - Cd44
-  - Lgr5
+- Abl2
+- Arhgap26
+- Bcar1
+- Cd151
+- Cd63
+- Cdc42bpa
+- Cnn2
+- Cnn3
+- Col5a1
+- Dock9
+- Ehd2
+- Epcam
+- Fat1
+- Fhl3
+- Flna
+- Flnb
+- Fscn1
+- Igsf9
+- Inf2
+- Klc2
+- Lasp1
+- Lcp1
+- Lrrc59
+- Mkl1
+- Mmp14
+- Myh10
+- Myo1b
+- Nck2
+- Pacsin2
+- Pak1
+- Palld
+- Pdgfra
+- Pdlim7
+- Peak1
+- Ppfibp1
+- Pstpip1
+- Ptk7
+- Sdc2
+- Sept2
+- Snx9
+- Sorl1
+- Src
+- Tmem2
+- Tmem47
+- Trip10
+- Twf2
+- Vav2
+- Wnt5a

@@ -28,16 +28,15 @@ suppressPackageStartupMessages({
   library(readr)
   library(dplyr)
   library(tidyr)
-  library(stringr)
   library(yaml)
 })
 
 #------------------------- paths ---------------------------
 
-expr_dir   <- "data/interim/rnaseq"
-meta_path  <- file.path(expr_dir, "sample_metadata_GSE190411.csv")
+expr_dir <- "data/interim/rnaseq"
+meta_path <- file.path(expr_dir, "sample_metadata_GSE190411.csv")
 geneset_yml <- "config/gene_sets_rnaseq.yaml"
-out_dir    <- "data/processed/rnaseq"
+out_dir <- "data/processed/rnaseq"
 
 if (!dir.exists(expr_dir)) {
   stop("[ERROR] Expression directory not found: ", expr_dir)
@@ -63,18 +62,19 @@ pdv_expr <- read_tsv(file.path(expr_dir, "pdv_expression.tsv"), show_col_types =
 
 meta <- read_csv(meta_path, show_col_types = FALSE)
 
-# Ensure gene_symbol exists
+# basic sanity
 stopifnot("gene_symbol" %in% colnames(bl6_expr))
 stopifnot("gene_symbol" %in% colnames(pap_expr))
 stopifnot("gene_symbol" %in% colnames(pdv_expr))
+stopifnot(all(c("sample_id", "dataset", "condition") %in% colnames(meta)))
 
 #---------------------- load gene sets ---------------------
 
 message("[STEP] Loading gene sets from YAML: ", geneset_yml)
 gene_sets <- yaml::read_yaml(geneset_yml)
 
-if (length(gene_sets) == 0) {
-  stop("[ERROR] No gene sets found in YAML.")
+if (!is.list(gene_sets) || length(gene_sets) == 0L) {
+  stop("[ERROR] No gene sets found in YAML or YAML did not parse as list.")
 }
 
 module_names <- names(gene_sets)
@@ -83,12 +83,9 @@ message("[INFO] Found gene sets: ", paste(module_names, collapse = ", "))
 #---------------- helper: compute module scores ------------
 
 compute_module_scores_dataset <- function(expr_df, dataset_name, gene_sets) {
-  # expr_df: tibble with gene_symbol + samples as columns
-  # dataset_name: "Bl6", "PAP_SCC", or "PDV"
-
   message("\n[DATASET] Computing module scores for: ", dataset_name)
 
-  # Long format
+  # long format
   expr_long <- expr_df %>%
     pivot_longer(
       cols = -gene_symbol,
@@ -96,47 +93,62 @@ compute_module_scores_dataset <- function(expr_df, dataset_name, gene_sets) {
       values_to = "expr"
     )
 
-  # Check that all sample_ids exist in metadata
-  unknown_samples <- setdiff(unique(expr_long$sample_id), meta$sample_id)
-  if (length(unknown_samples) > 0) {
-    stop("[ERROR] Some ", dataset_name, " samples missing in metadata: ",
-         paste(unknown_samples, collapse = ", "))
-  }
-
-  # Restrict metadata to this dataset
+  # metadata restricted to this dataset
   meta_sub <- meta %>%
     filter(dataset == dataset_name)
 
-  # Z-score per gene across samples in THIS dataset
+  if (nrow(meta_sub) == 0L) {
+    stop("[ERROR] No metadata rows for dataset ", dataset_name, ".")
+  }
+
+  # enforce 1:1 mapping between expression sample IDs and dataset-specific metadata
+  missing_in_meta <- setdiff(unique(expr_long$sample_id), meta_sub$sample_id)
+  if (length(missing_in_meta) > 0L) {
+    stop(
+      "[ERROR] Dataset ", dataset_name,
+      " has expression samples with no metadata rows: ",
+      paste(missing_in_meta, collapse = ", ")
+    )
+  }
+
+  # also check for meta samples with no expression (not fatal but warn)
+  missing_in_expr <- setdiff(meta_sub$sample_id, unique(expr_long$sample_id))
+  if (length(missing_in_expr) > 0L) {
+    warning(
+      "[WARN] Dataset ", dataset_name,
+      " has metadata samples with no expression columns: ",
+      paste(missing_in_expr, collapse = ", ")
+    )
+    # drop those from meta_sub so they don't appear later with all-NA modules
+    meta_sub <- meta_sub %>%
+      filter(sample_id %in% unique(expr_long$sample_id))
+  }
+
+  # z-score per gene across samples within this dataset
   expr_long <- expr_long %>%
     group_by(gene_symbol) %>%
     mutate(
       expr_z = (expr - mean(expr, na.rm = TRUE)) /
-               sd(expr, na.rm = TRUE)
+        sd(expr, na.rm = TRUE)
     ) %>%
-    ungroup()
-
-  # If sd is zero, expr_z becomes NA; set back to 0
-  expr_long <- expr_long %>%
+    ungroup() %>%
     mutate(
       expr_z = ifelse(is.na(expr_z), 0, expr_z)
     )
 
-  # Module scores
   module_scores_list <- list()
 
   for (mod in names(gene_sets)) {
     genes <- gene_sets[[mod]]
 
-    # Restrict to genes present in this dataset
+    # genes present in this dataset
     present_genes <- intersect(genes, unique(expr_long$gene_symbol))
 
-    if (length(present_genes) == 0) {
+    if (length(present_genes) == 0L) {
       warning("[WARN] Module ", mod, " has no genes present in dataset ", dataset_name)
       next
     }
 
-    # Filter and compute mean z per sample
     mod_scores <- expr_long %>%
       filter(gene_symbol %in% present_genes) %>%
       group_by(sample_id) %>%
@@ -144,32 +156,37 @@ compute_module_scores_dataset <- function(expr_df, dataset_name, gene_sets) {
         score = mean(expr_z, na.rm = TRUE),
         .groups = "drop"
       ) %>%
-      mutate(
-        module = mod
-      )
+      mutate(module = mod)
 
     module_scores_list[[mod]] <- mod_scores
   }
 
-  if (length(module_scores_list) == 0) {
+  if (length(module_scores_list) == 0L) {
     stop("[ERROR] No module scores computed for dataset: ", dataset_name)
   }
 
   scores_all <- bind_rows(module_scores_list)
 
-  # Join metadata for dataset / condition
+  # attach dataset/condition
   scores_all <- scores_all %>%
     left_join(meta_sub, by = "sample_id")
 
-  # Pivot modules wide
+  if (any(is.na(scores_all$dataset)) || any(is.na(scores_all$condition))) {
+    stop(
+      "[ERROR] After join, some rows in dataset ", dataset_name,
+      " have NA dataset/condition. Check metadata."
+    )
+  }
+
+  # wide modules
   scores_wide <- scores_all %>%
     select(sample_id, dataset, condition, module, score) %>%
     pivot_wider(
-      names_from = module,
+      names_from  = module,
       values_from = score
     )
 
-  return(scores_wide)
+  scores_wide
 }
 
 #---------------- compute for all datasets -----------------
