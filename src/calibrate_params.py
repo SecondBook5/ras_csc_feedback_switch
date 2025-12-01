@@ -1,481 +1,558 @@
 #!/usr/bin/env python3
 """
-Calibrate Ras–CSC feedback model parameters from GSE190411 Pap/SCC module scores.
+Analytic / heuristic calibration of Ras–CSC feedback model parameters
+from bulk RNA-Seq calibration targets.
 
-This script implements Step 4.1 and 4.2 of the plan:
+This script is designed to be consistent with:
+  - ras_csc_model.RasCSCParams
+  - fit_ras_csc_model.py / evaluate_ras_csc_fit.py
 
-  - Step 4.1: Non-dimensionalize Pap vs SCC module scores so that
-              Pap -> 0 and SCC -> 1 for each module X in {C, V, R, M}.
+It performs a coarse, transparent calibration:
 
-  - Step 4.2: Choose simple decay rates and solve the steady-state
-              equations for a minimal 5-variable feedback model so that
-              the dimensionless Pap and SCC points
+  1) Load bulk targets:
+       data/processed/rnaseq/ras_csc_calibration_targets.csv
 
-                  Pap*:  (C*, V*, L*, R*, M*) = (0, 0, 0, 0, 0)
-                  SCC*:  (1, 1, 1, 1, 1)
+     Required columns:
+       - dataset
+       - condition
+       - C_target, A_target, T_target, M_target
 
-              are fixed points of Model A (with feedback).
+  2) Rescale each target variable (C, A, T, M) to [0, 1] across all
+     dataset/condition combinations, so we can reason in a
+     dimensionless space.
 
-IMPORTANT:
-    - The Pap/SCC module scores from GSE190411 are *real data* and are
-      used to define the scaling between model state variables and
-      log2(TPM) space.
+  3) Use the rescaled CSC targets for SCC-like conditions
+     (SCC, PDV_WT) to set the effective activation needed in the
+     CSC equation:
 
-    - The kinetic parameters (k_* and K_*) are not uniquely identifiable
-      from 8 bulk RNA-seq samples. Here we choose them so that Pap* and
-      SCC* are equilibria in a simple ODE system, with time scales set
-      by hand (explicitly documented).
+         dC/dt = activation * (1 - C) - k_C_deg * C
 
-    - Model B (no feedback) is *deliberately* not calibrated to match
-      both Pap and SCC for C, because the structural argument in the
-      plan is that this is impossible with fixed Ras.
+     At steady state:
 
-Outputs:
-    data/processed/model_calibration_results.json
-        {
-          "targets": { ... Pap/SCC raw scores and scales ... },
-          "model_A": { ... calibrated parameters ... },
-          "model_B": { ... no-feedback parameters ... }
-        }
+         C* = activation / (activation + k_C_deg)
+
+     Given C* and k_C_deg we can solve for "activation".
+
+     We then split activation into three pieces:
+
+         activation = k_C_ras * f_ras + k_C_TGFb * Hill_T + k_C_M * M
+
+     and choose positive k_C_ras, k_C_TGFb, k_C_M that sum to the
+     required activation, assuming Hill_T ~ 1 and M ~ 1 in the SCC-like
+     state after rescaling.
+
+  4) Set the remaining parameters to biologically plausible values
+     on order 0.1–1.0. These are documented explicitly below.
+
+  5) Construct:
+       - model_A_params: feedback ON (k_C_M > 0)
+       - model_B_params: feedback OFF (k_C_M = 0)
+
+  6) Write results to:
+       data/processed/model_fits/model_calibration_results.json
+
+Schema:
+
+  {
+    "model_A_params": { RasCSCParams fields ... },
+    "model_B_params": { RasCSCParams fields ... },
+    "meta": {
+        "description": "...",
+        "source_csv": "...",
+        "normalization": "minmax_per_variable",
+        "scc_like_conditions": [...],
+        "t_span": [0.0, 100.0],
+        "dt": 0.1
+    }
+  }
+
+This script does not attempt full Bayesian or MCMC inference. It gives a
+transparent, analytic starting point consistent with the ODE structure.
+For rigorous fitting, use fit_ras_csc_model.py on top of this.
 """
 
 from __future__ import annotations
 
 # Import standard libraries
 import json
-import os
-from dataclasses import asdict, dataclass
-from typing import Dict
+import sys
+from dataclasses import asdict
+from pathlib import Path
+from typing import Dict, List, Tuple
 
 # Import third-party libraries
+import numpy as np
 import pandas as pd
 
-
-# ---------------------------------------------------------------------
-# Utilities for paths
-# ---------------------------------------------------------------------
-def get_repo_root() -> str:
-    """
-    Find the repository root by going up from this file's directory.
-
-    The script is expected to live under 'src/' in the repo. We go one
-    level up to reach the project root and assert that it exists.
-    """
-    # Get the absolute path of this script
-    here: str = os.path.abspath(__file__)
-    # Get directory containing this script (should be 'src/')
-    src_dir: str = os.path.dirname(here)
-    # Move one level up to reach repo root
-    repo_root: str = os.path.dirname(src_dir)
-
-    # Verify that repo_root exists
-    if not os.path.isdir(repo_root):
-        # Raise an error if the layout is not as expected
-        raise RuntimeError(
-            f"[ERROR] Computed repo root does not exist: {repo_root}"
-        )
-
-    # Return the verified repo root path
-    return repo_root
+# Import your ODE parameter dataclass
+from ras_csc_model import RasCSCParams
 
 
 # ---------------------------------------------------------------------
-# Dataclasses for targets and parameters
+# Path helpers
 # ---------------------------------------------------------------------
-@dataclass
-class PapSccTargets:
+
+def get_project_root() -> Path:
     """
-    Store Pap vs SCC module scores and linear scaling factors.
+    Infer the project root as the parent of the 'src' directory that
+    contains this script.
 
-    The idea is to make a simple linear map between model state variables
-    (dimensionless) and module scores (log2(TPM+1) or similar).
-
-    For each module X in {C, V, R, M}, we define:
-
-        X_model = 0  ->  X_raw = X_pap
-        X_model = 1  ->  X_raw = X_scc
-
-    So:
-
-        X_raw = X_offset + X_scale * X_model
-              = X_pap + (X_scc - X_pap) * X_model
-    """
-
-    # Raw Pap (mpos) scores
-    C_pap: float
-    V_pap: float
-    R_pap: float
-    M_pap: float
-
-    # Raw SCC (mpos) scores
-    C_scc: float
-    V_scc: float
-    R_scc: float
-    M_scc: float
-
-    # Linear scaling (offset + scale * X_model)
-    C_offset: float
-    C_scale: float
-    V_offset: float
-    V_scale: float
-    R_offset: float
-    R_scale: float
-    M_offset: float
-    M_scale: float
-
-
-@dataclass
-class ModelParams:
-    """
-    Store a set of kinetic parameters for the Ras–CSC feedback model.
-
-    This is kept generic as a dict-like container; ras_csc_model.py
-    will later unpack these into its RasCSCParams dataclass.
-
-    Fields:
-        params: Mapping from parameter name to float.
-    """
-    params: Dict[str, float]
-
-
-# ---------------------------------------------------------------------
-# Load Pap/SCC module scores and build targets
-# ---------------------------------------------------------------------
-def load_pap_scc_targets() -> PapSccTargets:
-    """
-    Load Pap vs SCC module scores for mpos samples and compute offsets/scales.
-
-    This function:
-        1. Reads 'module_scores_pap_scc.csv' in data/processed/.
-        2. Extracts the Pap mpos and SCC mpos rows.
-        3. Constructs a PapSccTargets object with:
-             - raw Pap/SCC scores,
-             - X_offset = X_pap,
-             - X_scale  = X_scc - X_pap.
+    Returns:
+        Path: Absolute path to the project root directory.
 
     Raises:
-        FileNotFoundError: If the processed module score file is missing.
-        RuntimeError: If Pap/SCC mpos rows are not uniquely defined.
+        RuntimeError: If the inferred root does not exist.
+    """
+    # Get the absolute path to this script
+    script_path: Path = Path(__file__).resolve()
+    # Move one level up from src/ to the project root
+    root_dir: Path = script_path.parent.parent
+
+    # Check that the root directory exists
+    if not root_dir.is_dir():
+        # Raise a clear error if the layout is unexpected
+        raise RuntimeError(
+            f"[ERROR] Inferred project root does not exist: {root_dir}"
+        )
+
+    # Return the verified project root
+    return root_dir
+
+
+# ---------------------------------------------------------------------
+# Data loading and normalization
+# ---------------------------------------------------------------------
+
+def load_calibration_targets(root_dir: Path) -> pd.DataFrame:
+    """
+    Load the bulk RNA-Seq calibration targets that define the target
+    values for (C, A, T, M) in z-score space.
+
+    The expected file is:
+      data/processed/rnaseq/ras_csc_calibration_targets.csv
+
+    Required columns:
+      - dataset
+      - condition
+      - C_target
+      - A_target
+      - T_target
+      - M_target
+
+    Args:
+        root_dir: Project root directory.
 
     Returns:
-        PapSccTargets: Dataclass with raw scores and scaling factors.
-    """
-    # Resolve repo root and scores path
-    repo_root: str = get_repo_root()
-    scores_path: str = os.path.join(
-        repo_root, "data", "processed", "module_scores_pap_scc.csv"
-    )
+        DataFrame: Cleaned targets table.
 
-    # Check that the module score file exists
-    if not os.path.exists(scores_path):
+    Raises:
+        FileNotFoundError: If the CSV is missing.
+        ValueError: If required columns are absent or data is empty.
+    """
+    # Build the path to the calibration targets CSV
+    csv_path: Path = root_dir / "data" / "processed" / \
+        "rnaseq" / "ras_csc_calibration_targets.csv"
+
+    # Check that the file exists before reading
+    if not csv_path.exists():
+        # Prompt the user to run the RNA pipeline first
         raise FileNotFoundError(
-            f"[ERROR] Cannot find module_scores_pap_scc.csv at: {scores_path}\n"
-            f"Run module_scores_pap_scc.py before calibrating parameters."
+            f"[ERROR] Calibration targets CSV not found at {csv_path}. "
+            f"Run 05_export_ras_csc_targets.R first."
         )
 
-    # Load CSV into a DataFrame
-    df = pd.read_csv(scores_path)
+    # Read the CSV into a DataFrame
+    df: pd.DataFrame = pd.read_csv(csv_path)
 
-    # Ensure required columns are present
-    required_cols = {
-        "condition", "stem_subset", "C_score", "V_score", "R_score", "M_score"
-    }
-    missing = required_cols - set(df.columns)
+    # Define required columns
+    required_cols: List[str] = [
+        "dataset", "condition",
+        "C_target", "A_target", "T_target", "M_target",
+    ]
+
+    # Identify any missing columns
+    missing: List[str] = [c for c in required_cols if c not in df.columns]
     if missing:
-        raise RuntimeError(
-            f"[ERROR] module_scores_pap_scc.csv is missing required columns: {missing}"
+        # Raise an informative error if the CSV is not as expected
+        raise ValueError(
+            f"[ERROR] Calibration targets CSV is missing required columns: {missing}"
         )
 
-    # Filter for Pap mpos and SCC mpos
-    df_pap = df[
-        (df["condition"] == "Pap") & (df["stem_subset"] == "mpos")
-    ]
-    df_scc = df[
-        (df["condition"] == "SCC") & (df["stem_subset"] == "mpos")
-    ]
-
-    # We expect exactly one row for each
-    if df_pap.shape[0] != 1 or df_scc.shape[0] != 1:
-        raise RuntimeError(
-            "[ERROR] Expected exactly one Pap mpos and one SCC mpos row in "
-            "module_scores_pap_scc.csv, but found "
-            f"{df_pap.shape[0]} Pap mpos and {df_scc.shape[0]} SCC mpos rows."
-        )
-
-    # Extract as Python dicts
-    pap_row = df_pap.iloc[0].to_dict()
-    scc_row = df_scc.iloc[0].to_dict()
-
-    # Raw scores
-    C_pap = float(pap_row["C_score"])
-    V_pap = float(pap_row["V_score"])
-    R_pap = float(pap_row["R_score"])
-    M_pap = float(pap_row["M_score"])
-
-    C_scc = float(scc_row["C_score"])
-    V_scc = float(scc_row["V_score"])
-    R_scc = float(scc_row["R_score"])
-    M_scc = float(scc_row["M_score"])
-
-    # Compute scales (SCC - Pap)
-    C_scale = C_scc - C_pap
-    V_scale = V_scc - V_pap
-    R_scale = R_scc - R_pap
-    M_scale = M_scc - M_pap
-
-    # Guard against degenerate scaling
-    if abs(C_scale) < 1e-8:
-        raise RuntimeError("[ERROR] ΔC (SCC - Pap) is ~0; cannot scale C.")
-    if abs(R_scale) < 1e-8:
-        raise RuntimeError("[ERROR] ΔR (SCC - Pap) is ~0; cannot scale R.")
-    if abs(M_scale) < 1e-8:
-        raise RuntimeError("[ERROR] ΔM (SCC - Pap) is ~0; cannot scale M.")
-    if abs(V_scale) < 1e-8:
-        raise RuntimeError("[ERROR] ΔV (SCC - Pap) is ~0; cannot scale V.")
-
-    # Build and return targets
-    return PapSccTargets(
-        C_pap=C_pap,
-        V_pap=V_pap,
-        R_pap=R_pap,
-        M_pap=M_pap,
-        C_scc=C_scc,
-        V_scc=V_scc,
-        R_scc=R_scc,
-        M_scc=M_scc,
-        C_offset=C_pap,
-        C_scale=C_scale,
-        V_offset=V_pap,
-        V_scale=V_scale,
-        R_offset=R_pap,
-        R_scale=R_scale,
-        M_offset=M_pap,
-        M_scale=M_scale,
+    # Drop rows with any missing target values
+    df_clean: pd.DataFrame = df.dropna(
+        subset=["C_target", "A_target", "T_target", "M_target"]
     )
 
-
-# ---------------------------------------------------------------------
-# Analytic calibration of Model A parameters
-# ---------------------------------------------------------------------
-def calibrate_model_a(targets: PapSccTargets) -> ModelParams:
-    """
-    Calibrate a simple 5-variable feedback model so that Pap* and SCC*
-    are steady states in dimensionless space.
-
-    We work entirely in *dimensionless* variables here. The link between
-    those and the real log2(TPM+1) scores is encoded in 'targets' via
-    offsets and scales.
-
-    Model A structure (dimensionless, with Pap* = 0, SCC* = 1):
-
-        dC/dt = k_C_M * M - k_C_decay * C
-        dV/dt = k_V_C * C - k_V_deg * V
-        dL/dt = k_L_V * V - k_L_deg * L
-        dR/dt = k_R_TGFb * u_TGFb - k_R_deg * R
-        dM/dt = k_M_act * Hill(L * R; K_M, m_M) - k_M_deg * M
-
-    with:
-
-        Hill(x; K, m) = x^m / (K^m + x^m)
-
-    Assumptions:
-        - Pap* is the origin: (C, V, L, R, M) = (0, 0, 0, 0, 0)
-        - SCC* is (1, 1, 1, 1, 1) under "high TGFβ" (u_TGFb = 1).
-        - Time scales (decay rates) are chosen to be 1.0 for simplicity.
-        - Ras baseline term is set to 0 in this reduced model, so that
-          the difference between Pap and SCC is carried entirely by the
-          positive feedback loop and TGFβ-driven LEPR.
-
-    From the steady-state conditions, we choose:
-
-        k_C_decay = 1.0, k_C_M = 1.0
-        k_V_deg   = 1.0, k_V_C = 1.0
-        k_L_deg   = 1.0, k_L_V = 1.0
-        k_R_deg   = 1.0, k_R_TGFb = 1.0, u_TGFb_SCC = 1.0
-        k_M_deg   = 1.0, K_M = 0.5, m_M = 2.0
-        k_M_act   = 1.0 / Hill(1; K_M, m_M)
-
-    Returns:
-        ModelParams: Wrapper around a dict of parameter values for Model A.
-    """
-    # Set decay rates (time scales) to 1.0
-    k_C_decay: float = 1.0
-    k_V_deg: float = 1.0
-    k_L_deg: float = 1.0
-    k_R_deg: float = 1.0
-    k_M_deg: float = 1.0
-
-    # Feedback from M to C chosen so that SCC*=(1,1,1,1,1) is a fixed point
-    k_C_M: float = k_C_decay  # so that M=1, C=1 solves 0 = k_C_M*1 - k_C_decay*1
-
-    # V dynamics chosen similarly: V tracks C at steady state
-    k_V_C: float = k_V_deg
-
-    # L dynamics: L tracks V at steady state
-    k_L_V: float = k_L_deg
-
-    # R dynamics: R tracks u_TGFb at steady state (for u_TGFb = 1 -> R=1)
-    k_R_TGFb: float = k_R_deg
-    u_TGFb: float = 1.0
-
-    # M dynamics: choose Hill parameters, then solve for k_M_act such that
-    # L=R=1 => M=1 is steady state.
-    K_M: float = 0.5
-    m_M: float = 2.0
-
-    # Compute Hill(1; K_M, m_M)
-    hill_num: float = 1.0 ** m_M
-    hill_den: float = (K_M ** m_M) + (1.0 ** m_M)
-    hill_1: float = hill_num / hill_den
-
-    # Avoid division by zero if something pathological happens
-    if hill_1 <= 0.0:
-        raise RuntimeError(
-            f"[ERROR] Hill(1; K={K_M}, m={m_M}) <= 0; cannot solve for k_M_act."
+    # Ensure that we still have data
+    if df_clean.empty:
+        raise ValueError(
+            "[ERROR] No usable rows remain in calibration targets after "
+            "dropping rows with missing values."
         )
 
-    # Solve for k_M_act from steady-state condition at SCC*:
-    #   0 = k_M_act * Hill(1) - k_M_deg * 1  => k_M_act = k_M_deg / Hill(1)
-    k_M_act: float = k_M_deg / hill_1
+    # Return the cleaned DataFrame
+    return df_clean
 
-    # We are not using a Hill nonlinearity on C itself in this reduced
-    # calibration, but ras_csc_model.py may include such a term. For now,
-    # set K_C and n_C to reasonable sigmoid-shaping values.
-    K_C: float = 0.3
+
+def minmax_normalize_column(col: pd.Series) -> Tuple[pd.Series, float, float]:
+    """
+    Perform simple min–max normalization of a numeric column.
+
+    For each value x in col:
+
+        x_norm = (x - min_x) / (max_x - min_x)
+
+    If max_x == min_x, the column has zero range and all normalized
+    values are set to 0.5 for lack of a better choice, with a warning.
+
+    Args:
+        col: Pandas Series of numeric values.
+
+    Returns:
+        Tuple of:
+          - normalized Series
+          - min value (float)
+          - max value (float)
+    """
+    # Compute min and max
+    min_x: float = float(col.min())
+    max_x: float = float(col.max())
+    range_x: float = max_x - min_x
+
+    # Guard against zero range
+    if range_x <= 1e-12:
+        # All values identical; return 0.5 everywhere
+        norm = pd.Series(0.5, index=col.index)
+        return norm, min_x, max_x
+
+    # Compute normalized values
+    norm = (col - min_x) / range_x
+
+    return norm, min_x, max_x
+
+
+def normalize_targets(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Dict[str, float]]]:
+    """
+    Normalize C_target, A_target, T_target, and M_target to [0, 1]
+    across all dataset/condition combinations.
+
+    Args:
+        df: DataFrame with raw targets.
+
+    Returns:
+        Tuple of:
+          - DataFrame with added columns:
+              C_norm, A_norm, T_norm, M_norm
+          - Dict with min/max per variable for bookkeeping:
+              {
+                "C": {"min": ..., "max": ...},
+                ...
+              }
+    """
+    # Initialize dict to store scaling info
+    scales: Dict[str, Dict[str, float]] = {}
+
+    # Copy the input DataFrame so we do not modify in place
+    out: pd.DataFrame = df.copy()
+
+    # Normalize each variable and record min/max
+    for var, col_name in [("C", "C_target"),
+                          ("A", "A_target"),
+                          ("T", "T_target"),
+                          ("M", "M_target")]:
+        # Perform min–max normalization
+        norm_col, min_x, max_x = minmax_normalize_column(out[col_name])
+
+        # Store normalized column
+        out[f"{var}_norm"] = norm_col
+
+        # Record scaling parameters
+        scales[var] = {"min": min_x, "max": max_x}
+
+    return out, scales
+
+
+# ---------------------------------------------------------------------
+# Analytic calibration of RasCSCParams
+# ---------------------------------------------------------------------
+
+def pick_scc_like_rows(df_norm: pd.DataFrame) -> pd.DataFrame:
+    """
+    Select rows that represent "high malignancy / high feedback" states.
+
+    We treat these as SCC-like conditions that should be near the
+    upper fixed point in the dimensionless model.
+
+    Currently uses:
+      - condition in {"SCC", "PDV_WT"}
+
+    Args:
+        df_norm: DataFrame with normalized targets.
+
+    Returns:
+        DataFrame subset with SCC-like rows. If none, falls back to
+        all rows.
+    """
+    # Define which condition labels we treat as SCC-like
+    scc_like_labels = {"SCC", "PDV_WT"}
+
+    # Filter based on the condition column
+    mask = df_norm["condition"].astype(str).isin(scc_like_labels)
+    scc_like = df_norm.loc[mask].copy()
+
+    # If no rows match, fall back to using the full DataFrame
+    if scc_like.empty:
+        scc_like = df_norm.copy()
+
+    return scc_like
+
+
+def calibrate_ras_csc_params(df_norm: pd.DataFrame) -> RasCSCParams:
+    """
+    Construct a RasCSCParams instance using the normalized calibration
+    targets.
+
+    Strategy:
+
+      1) Use SCC-like rows to estimate a target CSC steady state C* in
+         the normalized space (C_norm between 0 and 1).
+
+      2) Set k_C_deg = 1.0. Solve for the effective activation:
+
+             C* = activation / (activation + k_C_deg)
+
+         so:
+
+             activation = k_C_deg * C* / (1 - C* + eps)
+
+      3) Split activation into contributions from Ras, TGFb, and mTOR:
+
+             activation = k_C_ras * f_ras + k_C_TGFb * Hill_T + k_C_M * M
+
+         For calibration we assume Hill_T ≈ 1 and M ≈ 1 in SCC-like
+         conditions after normalization. We set:
+
+             k_C_ras  = 0.3 * activation
+             k_C_TGFb = 0.3 * activation
+             k_C_M    = 0.4 * activation
+
+         This guarantees they sum to activation and are all positive.
+
+      4) Set angiogenesis and TGFb parameters so that A and T track C:
+
+             dA/dt = k_A_ras * f_ras + k_A_C * C - k_A_deg * A
+             dT/dt = k_T_A * A + k_T_C * C - k_T_deg * T
+
+         We choose:
+             k_A_deg = k_T_deg = 1.0
+             k_A_ras small (0.05)
+             k_A_C   moderate (1.0)
+             k_T_A   moderate (1.0)
+             k_T_C   small (0.1)
+
+      5) Lepr dynamics:
+
+             dR/dt = k_R_prod * Hill_T(T) - k_R_deg * R
+
+         We reuse the same Hill form as for CSC with separate K_R, p_R.
+         We choose K_R = 0.5, p_R = 3.0, k_R_deg = 1.0, k_R_prod = 1.0.
+
+      6) Leptin and mTOR QSS:
+
+             L = L_sys + k_L_A * A
+             M = k_M_max * (S^q_M / (K_M^q_M + S^q_M)),
+                 S = L * R
+
+         We pick L_sys small (0.1) and k_L_A = 1.0 so that in high-A
+         states, L is of order 1–few. We choose K_M = 0.5, q_M = 2.0,
+         k_M_max = 1.0.
+
+    This is intentionally simple and transparent. It gives a consistent
+    RasCSCParams object that reflects the data ranges but does not claim
+    to be statistically optimal.
+    """
+    # Identify SCC-like rows
+    scc_like = pick_scc_like_rows(df_norm)
+
+    # Compute mean normalized CSC level in SCC-like conditions
+    C_star: float = float(scc_like["C_norm"].mean())
+
+    # Clip C_star away from 0 and 1 to avoid infinite activation
+    C_star = max(min(C_star, 0.95), 0.05)
+
+    # Set CSC decay rate
+    k_C_deg: float = 1.0
+
+    # Small epsilon to avoid division by zero
+    eps: float = 1e-8
+
+    # Solve for activation so that C* is a fixed point
+    activation: float = k_C_deg * C_star / (1.0 - C_star + eps)
+
+    # Set Ras input to "on" (1.0)
+    f_ras: float = 1.0
+
+    # Split activation into Ras, TGFb, and mTOR components
+    k_C_ras: float = 0.3 * activation
+    k_C_TGFb: float = 0.3 * activation
+    k_C_M: float = 0.4 * activation
+
+    # Choose Hill parameters for TGFb -> CSC
+    K_C: float = 0.5
     n_C: float = 3.0
 
-    # Baseline CSC production from Ras in this reduced model is set to 0.0,
-    # consistent with Pap* = 0 under M=0. The structural argument about
-    # Ras being fixed is handled separately in the report (Model B).
-    k_C_base: float = 0.0
+    # Angiogenesis parameters
+    k_A_deg: float = 1.0
+    k_A_ras: float = 0.05
+    k_A_C: float = 1.0
 
-    # Baseline leptin production term set to 0 so Pap* has L=0.
-    k_L0: float = 0.0
+    # TGFb parameters
+    k_T_deg: float = 1.0
+    k_T_A: float = 1.0
+    k_T_C: float = 0.1
 
-    # In this reduced calibration, we treat "clip_state" as True so that
-    # ras_csc_model can optionally bound state variables in [0, 1].
-    clip_state: float = 1.0  # stored as 1.0; ras_csc_model can cast to bool
+    # Lepr parameters
+    k_R_deg: float = 1.0
+    k_R_prod: float = 1.0
+    K_R: float = 0.5
+    p_R: float = 3.0
 
-    # Pack all parameters relevant to ras_csc_model.RasCSCParams
-    params: Dict[str, float] = {
-        "k_C_base": k_C_base,
-        "k_C_M": k_C_M,
-        "K_C": K_C,
-        "n_C": n_C,
-        "k_C_decay": k_C_decay,
-        "k_V_C": k_V_C,
-        "k_V_deg": k_V_deg,
-        "k_L0": k_L0,
-        "k_L_V": k_L_V,
-        "k_L_deg": k_L_deg,
-        "k_R_TGFb": k_R_TGFb,
-        "u_TGFb": u_TGFb,
-        "k_R_deg": k_R_deg,
-        "k_M_act": k_M_act,
-        "K_M": K_M,
-        "m_M": m_M,
-        "k_M_deg": k_M_deg,
-        # We store clip_state as 1.0; ras_csc_model can convert to bool
-        "clip_state": clip_state,
-    }
+    # Leptin QSS parameters
+    L_sys: float = 0.1
+    k_L_A: float = 1.0
 
-    # Wrap and return as ModelParams
-    return ModelParams(params=params)
+    # mTOR QSS parameters
+    k_M_max: float = 1.0
+    K_M: float = 0.5
+    q_M: float = 2.0
+
+    # Construct RasCSCParams
+    params = RasCSCParams(
+        f_ras=f_ras,
+        k_C_ras=k_C_ras,
+        k_C_TGFb=k_C_TGFb,
+        K_C=K_C,
+        n_C=n_C,
+        k_C_M=k_C_M,
+        k_C_deg=k_C_deg,
+        k_A_ras=k_A_ras,
+        k_A_C=k_A_C,
+        k_A_deg=k_A_deg,
+        k_T_A=k_T_A,
+        k_T_C=k_T_C,
+        k_T_deg=k_T_deg,
+        k_R_prod=k_R_prod,
+        K_R=K_R,
+        p_R=p_R,
+        k_R_deg=k_R_deg,
+        L_sys=L_sys,
+        k_L_A=k_L_A,
+        k_M_max=k_M_max,
+        K_M=K_M,
+        q_M=q_M,
+        clip_state=True,
+    )
+
+    return params
 
 
-def define_model_b_from_model_a(model_a: ModelParams) -> ModelParams:
+def make_feedback_off_variant(params: RasCSCParams) -> RasCSCParams:
     """
-    Define Model B (no-feedback) parameters based on Model A.
+    Create a second RasCSCParams instance representing Model B
+    (feedback off) by copying Model A and forcing k_C_M = 0.0.
 
-    Model B removes the M->C feedback by setting k_C_M = 0. The point of
-    Model B is *not* to match both Pap and SCC; rather, it is to serve as
-    the structurally restricted comparator:
+    Args:
+        params: RasCSCParams for Model A (feedback on).
 
-        dC/dt = Ras * k_C_base - k_C_decay * C
-
-    Under fixed Ras in Model B:
-
-        C* = Ras * k_C_base / k_C_decay
-
-    so there is a single CSC steady state for a given Ras, which cannot
-    simultaneously represent both Pap and SCC CSC states.
-
-    Here, we simply copy Model A's parameters and set k_C_M = 0.0. You
-    can optionally adjust k_C_base in the report if you want C* to sit
-    near the Pap value, but the structural impossibility result does not
-    depend on its exact value.
+    Returns:
+        RasCSCParams for Model B (feedback off).
     """
-    # Copy Model A parameters
-    params_b: Dict[str, float] = dict(model_a.params)
+    # Convert the dataclass to a dict
+    p_dict: Dict[str, object] = asdict(params)
 
-    # Remove M->C feedback
-    params_b["k_C_M"] = 0.0
+    # Force feedback coefficient to zero
+    p_dict["k_C_M"] = 0.0
 
-    # Set a small baseline CSC production so that C* > 0 in Model B
-    # when Ras is nonzero (Ras will be chosen in ras_csc_model.py).
-    params_b["k_C_base"] = 0.1
+    # Construct a new RasCSCParams from the modified dict
+    params_b = RasCSCParams(**p_dict)
 
-    # Return wrapped object
-    return ModelParams(params=params_b)
+    return params_b
 
 
 # ---------------------------------------------------------------------
-# Main calibration routine
+# Main entry point
 # ---------------------------------------------------------------------
+
 def main() -> None:
     """
-    Run the full calibration workflow:
+    Run the analytic calibration workflow and write a JSON file with:
 
-        1. Load Pap/SCC module scores from GSE190411 (Pap/SCC mpos).
-        2. Build PapSccTargets with raw scores and linear scaling.
-        3. Calibrate Model A parameters so Pap* and SCC* are steady states.
-        4. Define Model B parameters by removing M->C feedback.
-        5. Write everything to 'data/processed/model_calibration_results.json'.
+      - model_A_params: RasCSCParams for feedback model
+      - model_B_params: RasCSCParams with k_C_M = 0
+      - meta: information about normalization and source data
 
-    The JSON file is later read by ras_csc_model.py to instantiate
-    RasCSCParams for both models in a reproducible way.
+    The output path is:
+      data/processed/model_fits/model_calibration_results.json
     """
-    # Load Pap/SCC module target information
-    targets = load_pap_scc_targets()
+    # Infer project root
+    root_dir: Path = get_project_root()
 
-    # Calibrate Model A (feedback)
-    model_a = calibrate_model_a(targets)
+    # Load raw calibration targets
+    targets_df: pd.DataFrame = load_calibration_targets(root_dir)
 
-    # Build Model B (no-feedback) from Model A
-    model_b = define_model_b_from_model_a(model_a)
+    # Normalize to [0, 1]
+    targets_norm, scales = normalize_targets(targets_df)
 
-    # Prepare JSON payload
-    payload = {
-        "targets": asdict(targets),
-        "model_A": model_a.params,
-        "model_B": model_b.params,
+    # Calibrate Model A parameters from normalized data
+    params_A: RasCSCParams = calibrate_ras_csc_params(targets_norm)
+
+    # Build Model B parameters (feedback off)
+    params_B: RasCSCParams = make_feedback_off_variant(params_A)
+
+    # Prepare output directory
+    out_dir: Path = root_dir / "data" / "processed" / "model_fits"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Output path
+    out_path: Path = out_dir / "model_calibration_results.json"
+
+    # Build meta information
+    meta = {
+        "description": "Analytic / heuristic calibration from bulk RNA-Seq targets "
+                       "with min–max normalization and SCC-like anchoring.",
+        "source_csv": str(root_dir / "data" / "processed" / "rnaseq" / "ras_csc_calibration_targets.csv"),
+        "normalization": "minmax_per_variable",
+        "scales": scales,
+        "scc_like_conditions": ["SCC", "PDV_WT"],
+        "t_span": [0.0, 100.0],
+        "dt": 0.1,
     }
 
-    # Resolve output path
-    repo_root: str = get_repo_root()
-    out_dir: str = os.path.join(repo_root, "data", "processed")
-    os.makedirs(out_dir, exist_ok=True)
-    out_path: str = os.path.join(out_dir, "model_calibration_results.json")
+    # Build JSON payload in the schema expected by evaluate_ras_csc_fit.py
+    payload = {
+        "model_A_params": asdict(params_A),
+        "model_B_params": asdict(params_B),
+        "meta": meta,
+    }
 
-    # Write to JSON
-    with open(out_path, "w", encoding="utf-8") as f:
+    # Write JSON file
+    with out_path.open("w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)
 
-    # Print a concise summary
-    print(f"[OK] Wrote calibrated parameters and targets to: {out_path}")
-    print("\nPap (mpos) raw module scores:")
-    print(f"  C = {targets.C_pap:.6f}, V = {targets.V_pap:.6f}, "
-          f"R = {targets.R_pap:.6f}, M = {targets.M_pap:.6f}")
-    print("SCC (mpos) raw module scores:")
-    print(f"  C = {targets.C_scc:.6f}, V = {targets.V_scc:.6f}, "
-          f"R = {targets.R_scc:.6f}, M = {targets.M_scc:.6f}")
-    print("\nModel A parameters (feedback):")
-    for k, v in model_a.params.items():
-        print(f"  {k} = {v:.6f}")
-    print("\nModel B parameters (no feedback, k_C_M forced to 0):")
-    for k, v in model_b.params.items():
-        print(f"  {k} = {v:.6f}")
+    # Print a concise summary to stdout
+    print(f"[OK] Wrote analytic calibration parameters to: {out_path}")
+    print("\n[INFO] Model A (feedback ON) key parameters:")
+    print(f"  k_C_ras  = {params_A.k_C_ras:.4f}")
+    print(f"  k_C_TGFb = {params_A.k_C_TGFb:.4f}")
+    print(f"  k_C_M    = {params_A.k_C_M:.4f}")
+    print(f"  k_C_deg  = {params_A.k_C_deg:.4f}")
+    print("\n[INFO] Model B (feedback OFF) sets k_C_M = 0.0")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        # Print any error clearly and exit with non-zero status
+        print(f"[ERROR] calibrate_params.py failed: {exc}", file=sys.stderr)
+        sys.exit(1)
