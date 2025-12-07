@@ -40,6 +40,7 @@ cran_pkgs <- c(
   "pheatmap",
   "RColorBrewer",
   "patchwork",
+  "circlize",
 
   # Statistical helpers
   "statmod",
@@ -47,8 +48,9 @@ cran_pkgs <- c(
   # Matrix / linear algebra (needed for Seurat and friends)
   "Matrix",
 
-  # Seurat is on CRAN as well
-  "Seurat"
+  # Seurat is on CRAN as well as phateR
+  "Seurat",
+  "phateR"
 )
 
 ## ----------------------------------------------------------------------
@@ -58,6 +60,7 @@ bioc_pkgs <- c(
   # Bulk RNA-seq / DE
   "DESeq2",
   "genefilter",
+  "ComplexHeatmap",
 
   # Single-cell + matrix infrastructure
   "DelayedMatrixStats",

@@ -1,6 +1,6 @@
 ==============================================
 ATAC-SEQ VALIDATION REPORT
-Generated: 2025-12-07 07:57:06.093744
+Generated: 2025-12-07 17:27:16.479989
 ==============================================
 
 ATAC-seq samples:
@@ -22,15 +22,18 @@ Peak annotation statistics:
   SCC_mneg_ATAC: 18997 genes, 97033 peaks (5.1 peaks/gene)
   SCC_mpos_ATAC: 18974 genes, 99173 peaks (5.2 peaks/gene)
 
-Module gene sets:
+Module gene sets from YAML:
   TGFb_bulk: 35 genes
   mTOR_bulk: 59 genes
   Angio_bulk: 32 genes
   CSC_bulk: 48 genes
+
+Added module CSC_Yuan101 (Yuan CSC 101 markers): 101 genes
   TGFb_bulk: 33/35 genes present (94.3%)
   mTOR_bulk: 59/59 genes present (100.0%)
   Angio_bulk: 32/32 genes present (100.0%)
   CSC_bulk: 45/48 genes present (93.8%)
+  CSC_Yuan101: 99/101 genes present (98.0%)
 
 ==============================================
 STATISTICAL TESTS: ATAC Module Scores
@@ -56,15 +59,33 @@ CSC_bulk (m+ vs m-):
   m- mean: 0.118
   t-test: p=0.384, d=-1.18 ✗ NS
 
+CSC_Yuan101 (m+ vs m-):
+  m+ mean: -0.184
+  m- mean: 0.208
+  t-test: p=0.403, d=-1.04 ✗ NS
+
 Progression trends (mean scores):
-  TGFb_bulk: Normal=0.27 → Pap=-0.39 → SCC=0.12 (FC=0.43)
-  mTOR_bulk: Normal=0.17 → Pap=-0.31 → SCC=0.13 (FC=0.77)
-  Angio_bulk: Normal=0.01 → Pap=-0.18 → SCC=0.17 (FC=17.01)
-  CSC_bulk: Normal=0.21 → Pap=-0.32 → SCC=0.11 (FC=0.49)
+  TGFb_bulk: Normal=0.27 -> Pap=-0.39 -> SCC=0.12 (FC=0.43)
+  mTOR_bulk: Normal=0.17 -> Pap=-0.31 -> SCC=0.13 (FC=0.77)
+  Angio_bulk: Normal=0.01 -> Pap=-0.18 -> SCC=0.17 (FC=17.01)
+  CSC_bulk: Normal=0.21 -> Pap=-0.32 -> SCC=0.11 (FC=0.49)
+  CSC_Yuan101: Normal=-0.02 -> Pap=-0.25 -> SCC=0.27 (FC=-12.10)
 
 ==============================================
 CROSS-OMICS CONCORDANCE (RNA vs ATAC)
 ==============================================
+
+Angio_bulk:
+  Spearman r = 0.500, p = 1.000 ⚠ WEAK
+    Normal: RNA=-0.82, ATAC=0.01
+    Papilloma: RNA=-0.40, ATAC=-0.18
+    SCC: RNA=0.40, ATAC=0.17
+
+CSC_bulk:
+  Spearman r = -0.500, p = 1.000 ⚠ WEAK
+    Normal: RNA=-0.91, ATAC=0.21
+    Papilloma: RNA=-0.32, ATAC=-0.32
+    SCC: RNA=0.39, ATAC=0.11
 
 TGFb_bulk:
   Spearman r = 0.500, p = 1.000 ⚠ WEAK
@@ -78,30 +99,24 @@ mTOR_bulk:
     Papilloma: RNA=-0.36, ATAC=-0.31
     SCC: RNA=0.36, ATAC=0.13
 
-Angio_bulk:
-  Spearman r = 0.500, p = 1.000 ⚠ WEAK
-    Normal: RNA=-0.82, ATAC=0.01
-    Papilloma: RNA=-0.40, ATAC=-0.18
-    SCC: RNA=0.40, ATAC=0.17
-
-CSC_bulk:
-  Spearman r = -0.500, p = 1.000 ⚠ WEAK
-    Normal: RNA=-0.86, ATAC=0.21
-    Papilloma: RNA=-0.42, ATAC=-0.32
-    SCC: RNA=0.42, ATAC=0.11
-
 
 ==============================================
 MECHANISTIC HYPOTHESIS TESTING
 ==============================================
 
-H1: TGFβ → CSC pathway
+H1a: TGFβ -> CSC (legacy CSC_bulk)
   Correlation: r = 0.771, p = 0.103 ✗ NOT SUPPORTED
 
-H2: mTOR → CSC pathway
+H1b: TGFβ -> CSC (Yuan CSC 101 chromatin)
+  Correlation: r = 0.600, p = 0.242 ✗ NOT SUPPORTED
+
+H2a: mTOR -> CSC (legacy CSC_bulk)
   Correlation: r = 0.943, p = 0.017 ✓ SUPPORTED
 
-H3: Angio → TGFβ pathway
+H2b: mTOR -> CSC (Yuan CSC 101 chromatin)
+  Correlation: r = 0.886, p = 0.033 ✓ SUPPORTED
+
+H3: Angio -> TGFβ pathway
   Correlation: r = 0.657, p = 0.175 ✗ NOT SUPPORTED
 
 ==============================================
@@ -109,17 +124,17 @@ CALIBRATION TARGETS (ATAC)
 ==============================================
 
 HFSC (Normal):
-  C=-0.276, A=-0.462, T=-0.063, M=-0.304
+  C_Yuan101=-0.513, C_legacy=-0.276, A=-0.462, T=-0.063, M=-0.304
 IFE (Normal):
-  C=0.705, A=0.480, T=0.601, M=0.652
+  C_Yuan101=0.466, C_legacy=0.705, A=0.480, T=0.601, M=0.652
 Papilloma_mneg (Papilloma):
-  C=-0.206, A=-0.121, T=-0.294, M=-0.117
+  C_Yuan101=-0.064, C_legacy=-0.206, A=-0.121, T=-0.294, M=-0.117
 Papilloma_mpos (Papilloma):
-  C=-0.436, A=-0.246, T=-0.478, M=-0.499
+  C_Yuan101=-0.437, C_legacy=-0.436, A=-0.246, T=-0.478, M=-0.499
 SCC_mneg (SCC):
-  C=0.442, A=0.399, T=0.359, M=0.356
+  C_Yuan101=0.479, C_legacy=0.442, A=0.399, T=0.359, M=0.356
 SCC_mpos (SCC):
-  C=-0.229, A=-0.050, T=-0.125, M=-0.088
+  C_Yuan101=0.069, C_legacy=-0.229, A=-0.050, T=-0.125, M=-0.088
 
 ==============================================
 SUMMARY STATISTICS
@@ -127,10 +142,11 @@ SUMMARY STATISTICS
 
 Total samples processed: 6
 Total genes with accessibility: 20966
-Modules computed: 4
+Modules computed (required set): 5
 
-Gene coverage per module:
+Gene coverage per required module:
   TGFb_bulk: 33/35 genes (94.3%)
   mTOR_bulk: 59/59 genes (100.0%)
   Angio_bulk: 32/32 genes (100.0%)
   CSC_bulk: 45/48 genes (93.8%)
+  CSC_Yuan101: 99/101 genes (98.0%)

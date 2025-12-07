@@ -13,12 +13,14 @@
 #   6. Mechanistic hypothesis testing
 #   7. Advanced publication figures
 #   8. Export calibration targets
+#   9. Summary statistics
 #
 # Outputs:
 #   data/interim/atac/atac_gene_accessibility.tsv
 #   data/processed/atac/atac_module_scores_by_sample.csv
+#   data/processed/atac/atac_calibration_targets.csv
 #   data/processed/atac/atac_validation_report.txt
-#   figures/main/atac_*.png
+#   figures/atac/atac_*.png
 
 suppressPackageStartupMessages({
     library(readr)
@@ -30,18 +32,37 @@ suppressPackageStartupMessages({
     library(ggplot2)
     library(ggpubr)
     library(patchwork)
-    library(pheatmap)
     library(RColorBrewer)
     library(GenomicRanges)
     library(rtracklayer)
     library(TxDb.Mmusculus.UCSC.mm10.knownGene)
     library(org.Mm.eg.db)
     library(ChIPseeker)
+    # Advanced heatmaps for adjacency / sample structure
+    library(ComplexHeatmap)
+    library(circlize)
+    library(grid)
 })
 
-message("=== RUNNING pipelines/data_processing/03_process_atacseq.R ===")
-condition <- NULL
+# Hard-coded Yuan CSC 101 markers (used for CSC_Yuan101 module)
+YUAN_CSC_101_MARKERS <- c(
+    "Abl2", "Acsl4", "Adcy7", "Afap1", "Antxr2", "Apaf1", "Arhgef28", "Atp13a3",
+    "Ccnd1", "Ccnd2", "Cd200", "Cd80", "Cdkn2a", "Cep250", "Cgnl1", "Cnn3",
+    "Cnr1", "Cpa4", "Cxcl3", "Dapk1", "Dhrs9", "Dip2a", "Doc2b", "Dock9",
+    "Dok1", "Dusp5", "Dynap", "Ecm1", "Evi2a", "Fam102b", "Fam78b", "Fat1",
+    "Fblim1", "Fbln2", "Flnb", "Fmn1", "Galnt1", "Gfpt1", "Gm14137", "Hivep2",
+    "Hmga2", "Hmgcll1", "Hnf1b", "Igf2bp2", "Il1a", "Itpripl2", "Jam2", "Krt18",
+    "Krt8", "Lasp1", "Lepr", "Maged2", "Mgat5", "Myadm", "Myh9", "Myo1b",
+    "Myof", "Nabp1", "Nav2", "Nav3", "Nbea", "Nt5e", "Orai2", "Parvb",
+    "Pcolce2", "Peak1", "Phlda1", "Plau", "Plekhg3", "Plod2", "Ppfibp1", "Prl8a9",
+    "Prmt2", "Pthlh", "Rapgef3", "Rgs16", "Samd4", "Serpinb6b", "Serpinb9", "Shroom1",
+    "Slc25a24", "Slc2a9", "Slitrk6", "Soat1", "St8sia1", "Stk39", "Sulf1", "Svil",
+    "Taf4b", "Tgfa", "Tmc7", "Tmcc3", "Tmeff1", "Tnfaip2", "Tnfrsf10b", "Tnfrsf22",
+    "Tnfrsf23", "Trio", "Ttc9", "Wnt7a", "Ywhag"
+)
 
+message("=== RUNNING pipelines/data_processing/03_process_atac.R ===")
+condition <- NULL
 
 message("\n========================================")
 message("ATAC-SEQ PROCESSING PIPELINE")
@@ -53,7 +74,7 @@ ROOT <- "."
 RAW_DIR <- file.path(ROOT, "data/raw/GSE190414")
 INTERIM_DIR <- file.path(ROOT, "data/interim/atac")
 PROCESSED_DIR <- file.path(ROOT, "data/processed/atac")
-FIG_DIR <- file.path(ROOT, "figures/main")
+FIG_DIR <- file.path(ROOT, "figures/atac")
 GENESET_YAML <- file.path(ROOT, "config/gene_sets_rnaseq.yaml")
 
 # RNA-seq results for cross-omics comparison
@@ -85,13 +106,13 @@ write_validation("==============================================\n")
 message("[STEP 1/9] Defining ATAC-seq samples")
 
 samples <- tibble::tribble(
-    ~sample_id, ~npeak_file, ~condition, ~stage,
-    "HFSC_ATAC", "GSE190414_HFSC_ATAC_Rep1.narrowPeak.gz", "HFSC", "Normal",
-    "IFE_ATAC", "GSE190414_IFE_ATAC_Rep1.narrowPeak.gz", "IFE", "Normal",
-    "PAP_mneg_ATAC", "GSE190414_PAP_mneg_ATAC_Reps_POOL.narrowPeak.gz", "Papilloma_mneg", "Papilloma",
-    "PAP_mpos_ATAC", "GSE190414_PAP_mpos_ATAC_Reps_POOL.narrowPeak.gz", "Papilloma_mpos", "Papilloma",
-    "SCC_mneg_ATAC", "GSE190414_SCC_mneg_ATAC_Reps_POOL.narrowPeak.gz", "SCC_mneg", "SCC",
-    "SCC_mpos_ATAC", "GSE190414_SCC_mpos_ATAC_Reps_POOL.narrowPeak.gz", "SCC_mpos", "SCC"
+    ~sample_id,       ~npeak_file,                                          ~condition,        ~stage,
+    "HFSC_ATAC",      "GSE190414_HFSC_ATAC_Rep1.narrowPeak.gz",             "HFSC",            "Normal",
+    "IFE_ATAC",       "GSE190414_IFE_ATAC_Rep1.narrowPeak.gz",              "IFE",             "Normal",
+    "PAP_mneg_ATAC",  "GSE190414_PAP_mneg_ATAC_Reps_POOL.narrowPeak.gz",    "Papilloma_mneg",  "Papilloma",
+    "PAP_mpos_ATAC",  "GSE190414_PAP_mpos_ATAC_Reps_POOL.narrowPeak.gz",    "Papilloma_mpos",  "Papilloma",
+    "SCC_mneg_ATAC",  "GSE190414_SCC_mneg_ATAC_Reps_POOL.narrowPeak.gz",    "SCC_mneg",        "SCC",
+    "SCC_mpos_ATAC",  "GSE190414_SCC_mpos_ATAC_Reps_POOL.narrowPeak.gz",    "SCC_mpos",        "SCC"
 ) %>%
     mutate(
         path = file.path(RAW_DIR, npeak_file),
@@ -245,12 +266,20 @@ message("  ✓ Gene accessibility matrix written")
 message("\n[STEP 3/9] Computing module scores")
 
 gene_sets <- read_yaml(GENESET_YAML)
-message("  Gene sets: ", paste(names(gene_sets), collapse = ", "))
+message("  Gene sets read from: ", GENESET_YAML)
+message("  Gene sets available: ", paste(names(gene_sets), collapse = ", "))
 
-write_validation("\nModule gene sets:")
+write_validation("\nModule gene sets from YAML:")
 for (mod in names(gene_sets)) {
     write_validation(sprintf("  %s: %d genes", mod, length(gene_sets[[mod]])))
 }
+
+# Attach Yuan CSC 101 markers as a separate module (new CSC definition for chromatin)
+gene_sets$CSC_Yuan101 <- YUAN_CSC_101_MARKERS
+write_validation(sprintf(
+    "\nAdded module CSC_Yuan101 (Yuan CSC 101 markers): %d genes",
+    length(gene_sets$CSC_Yuan101)
+))
 
 # Long format for z-scoring
 expr_long <- access_wide %>%
@@ -264,7 +293,8 @@ expr_long <- access_wide %>%
 expr_long <- expr_long %>%
     dplyr::group_by(gene_symbol) %>%
     dplyr::mutate(
-        access_z = (access - mean(access, na.rm = TRUE)) / sd(access, na.rm = TRUE)
+        access_z = (access - mean(access, na.rm = TRUE)) /
+            sd(access, na.rm = TRUE)
     ) %>%
     dplyr::ungroup() %>%
     dplyr::mutate(
@@ -307,7 +337,8 @@ scores_long <- bind_rows(module_list)
 
 # Join metadata
 scores_long <- scores_long %>%
-    left_join(samples %>% dplyr::select(sample_id, dataset, condition, stage, csc_enriched),
+    left_join(
+        samples %>% dplyr::select(sample_id, dataset, condition, stage, csc_enriched),
         by = "sample_id"
     )
 
@@ -324,13 +355,34 @@ message("  ✓ Module scores written")
 
 message("\n[STEP 4/9] Statistical validation")
 
-required_modules <- c("TGFb_bulk", "mTOR_bulk", "Angio_bulk", "CSC_bulk")
+# Required modules for downstream comparisons / loop adjacency
+required_modules <- c("TGFb_bulk", "mTOR_bulk", "Angio_bulk", "CSC_bulk", "CSC_Yuan101")
+
+# Check that required modules exist in gene_sets
+missing_mods <- setdiff(required_modules, names(gene_sets))
+if (length(missing_mods) > 0) {
+    stop(
+        "[ERROR] Missing required modules in ", GENESET_YAML, " or local definitions: ",
+        paste(missing_mods, collapse = ", ")
+    )
+}
+
+# Sanity check that CSC_Yuan101 has 101 genes
+if ("CSC_Yuan101" %in% names(gene_sets)) {
+    if (length(gene_sets$CSC_Yuan101) != 101L) {
+        warning(
+            "[WARN] CSC_Yuan101 has length ",
+            length(gene_sets$CSC_Yuan101),
+            " (expected 101). Confirm this is intentional."
+        )
+    }
+}
 
 write_validation("\n==============================================")
 write_validation("STATISTICAL TESTS: ATAC Module Scores")
 write_validation("==============================================\n")
 
-# Test 1: CSC module enrichment in m+ (CSC-enriched) samples
+# Test 1: CSC and other modules enrichment in m+ vs m-
 for (mod in required_modules) {
     test_data <- scores_long %>%
         filter(module == mod, stage %in% c("Papilloma", "SCC"))
@@ -357,7 +409,7 @@ for (mod in required_modules) {
     }
 }
 
-# Test 2: Progression trends (Normal → Papilloma → SCC)
+# Test 2: Progression trends (Normal -> Papilloma -> SCC)
 progression_summary <- scores_long %>%
     filter(module %in% required_modules) %>%
     group_by(stage, module) %>%
@@ -374,10 +426,10 @@ for (mod in required_modules) {
     scc <- prog_data$mean_score[prog_data$stage == "SCC"]
 
     if (length(norm) > 0 && length(scc) > 0) {
-        fold_change <- scc / (norm + 0.001) # Avoid division by zero
+        fold_change <- scc / (norm + 0.001)
 
         write_validation(sprintf(
-            "  %s: Normal=%.2f → Pap=%.2f → SCC=%.2f (FC=%.2f)",
+            "  %s: Normal=%.2f -> Pap=%.2f -> SCC=%.2f (FC=%.2f)",
             mod,
             ifelse(length(norm) > 0, norm, NA),
             ifelse(length(pap) > 0, mean(pap), NA),
@@ -394,14 +446,12 @@ for (mod in required_modules) {
 message("\n[STEP 5/9] Cross-omics comparison (ATAC vs RNA-seq)")
 
 if (file.exists(RNA_SCORES)) {
-    # -- Load RNA module scores ----------------------------------------------
+    # Load RNA module scores
     rna_scores <- readr::read_csv(RNA_SCORES, show_col_types = FALSE)
 
     message("  RNA score columns: ", paste(colnames(rna_scores), collapse = ", "))
 
-    # ------------------------------------------------------------------------
-    # 1. Make sure we have a 'condition'-like column
-    # ------------------------------------------------------------------------
+    # Ensure we have a 'condition' column
     if (!"condition" %in% colnames(rna_scores)) {
         if ("Condition" %in% colnames(rna_scores)) {
             message("  [INFO] Found 'Condition' column; renaming to 'condition'")
@@ -418,13 +468,11 @@ if (file.exists(RNA_SCORES)) {
         }
     }
 
-    # Create a *new* column for mapping and keep the original 'condition'
+    # New column used for mapping, preserve original condition
     rna_scores <- rna_scores %>%
         dplyr::mutate(cond_for_atac = condition)
 
-    # ------------------------------------------------------------------------
-    # 2. Define mapping between RNA conditions and ATAC stages
-    # ------------------------------------------------------------------------
+    # Mapping between RNA conditions and ATAC stages
     condition_mapping <- tibble::tribble(
         ~rna_condition, ~atac_stage,
         "Normal",       "Normal",
@@ -432,12 +480,13 @@ if (file.exists(RNA_SCORES)) {
         "SCC",          "SCC"
     )
 
-    # ------------------------------------------------------------------------
-    # 3. RNA mean scores by condition (using cond_for_atac)
-    # ------------------------------------------------------------------------
+    # Only use modules that exist in RNA file
+    modules_for_cross_omics <- intersect(required_modules, colnames(rna_scores))
+
+    # RNA mean scores by condition
     rna_summary <- rna_scores %>%
         tidyr::pivot_longer(
-            cols = dplyr::all_of(required_modules),
+            cols = dplyr::all_of(modules_for_cross_omics),
             names_to = "module",
             values_to = "score"
         ) %>%
@@ -448,11 +497,9 @@ if (file.exists(RNA_SCORES)) {
         ) %>%
         dplyr::rename(rna_condition = cond_for_atac)
 
-    # ------------------------------------------------------------------------
-    # 4. ATAC mean scores by stage
-    # ------------------------------------------------------------------------
+    # ATAC mean scores by stage
     atac_summary <- scores_long %>%
-        dplyr::filter(module %in% required_modules) %>%
+        dplyr::filter(module %in% modules_for_cross_omics) %>%
         dplyr::group_by(stage, module) %>%
         dplyr::summarise(
             atac_mean = mean(score, na.rm = TRUE),
@@ -460,9 +507,7 @@ if (file.exists(RNA_SCORES)) {
         ) %>%
         dplyr::rename(atac_stage = stage)
 
-    # ------------------------------------------------------------------------
-    # 5. Join and compute concordance
-    # ------------------------------------------------------------------------
+    # Join and compute concordance
     cross_omics <- condition_mapping %>%
         dplyr::left_join(rna_summary, by = "rna_condition") %>%
         dplyr::left_join(atac_summary, by = c("atac_stage", "module")) %>%
@@ -472,7 +517,7 @@ if (file.exists(RNA_SCORES)) {
     write_validation("CROSS-OMICS CONCORDANCE (RNA vs ATAC)")
     write_validation("==============================================\n")
 
-    for (mod in required_modules) {
+    for (mod in unique(cross_omics$module)) {
         mod_data <- cross_omics %>% dplyr::filter(module == mod)
 
         if (nrow(mod_data) >= 3) {
@@ -522,42 +567,85 @@ write_validation("\n==============================================")
 write_validation("MECHANISTIC HYPOTHESIS TESTING")
 write_validation("==============================================\n")
 
-# Hypothesis 1: TGFβ activity correlates with CSC signature
+# Prepare wide table with both CSC definitions if available
 test_df_wide <- scores_wide %>%
-    filter(!is.na(TGFb_bulk) & !is.na(CSC_bulk))
+    filter(!is.na(TGFb_bulk))
 
-if (nrow(test_df_wide) >= 3) {
-    cor_T_C <- cor.test(test_df_wide$TGFb_bulk, test_df_wide$CSC_bulk, method = "spearman")
-
-    write_validation("H1: TGFβ → CSC pathway")
+# H1: TGFb -> CSC for both definitions
+if (all(c("TGFb_bulk", "CSC_bulk") %in% colnames(test_df_wide))) {
+    cor_T_C_legacy <- cor.test(
+        test_df_wide$TGFb_bulk,
+        test_df_wide$CSC_bulk,
+        method = "spearman"
+    )
+    write_validation("H1a: TGFβ -> CSC (legacy CSC_bulk)")
     write_validation(sprintf(
         "  Correlation: r = %.3f, p = %.3f %s",
-        cor_T_C$estimate, cor_T_C$p.value,
-        ifelse(cor_T_C$p.value < 0.05 & cor_T_C$estimate > 0.3,
+        cor_T_C_legacy$estimate, cor_T_C_legacy$p.value,
+        ifelse(cor_T_C_legacy$p.value < 0.05 & cor_T_C_legacy$estimate > 0.3,
             "✓ SUPPORTED", "✗ NOT SUPPORTED"
         )
     ))
 }
 
-# Hypothesis 2: mTOR activity correlates with CSC signature
-if (nrow(test_df_wide) >= 3 && "mTOR_bulk" %in% colnames(test_df_wide)) {
-    cor_M_C <- cor.test(test_df_wide$mTOR_bulk, test_df_wide$CSC_bulk, method = "spearman")
-
-    write_validation("\nH2: mTOR → CSC pathway")
+if (all(c("TGFb_bulk", "CSC_Yuan101") %in% colnames(test_df_wide))) {
+    cor_T_C_yuan <- cor.test(
+        test_df_wide$TGFb_bulk,
+        test_df_wide$CSC_Yuan101,
+        method = "spearman"
+    )
+    write_validation("\nH1b: TGFβ -> CSC (Yuan CSC 101 chromatin)")
     write_validation(sprintf(
         "  Correlation: r = %.3f, p = %.3f %s",
-        cor_M_C$estimate, cor_M_C$p.value,
-        ifelse(cor_M_C$p.value < 0.05 & cor_M_C$estimate > 0.3,
+        cor_T_C_yuan$estimate, cor_T_C_yuan$p.value,
+        ifelse(cor_T_C_yuan$p.value < 0.05 & cor_T_C_yuan$estimate > 0.3,
             "✓ SUPPORTED", "✗ NOT SUPPORTED"
         )
     ))
 }
 
-# Hypothesis 3: Angiogenesis correlates with TGFβ
-if (nrow(test_df_wide) >= 3 && "Angio_bulk" %in% colnames(test_df_wide)) {
-    cor_A_T <- cor.test(test_df_wide$Angio_bulk, test_df_wide$TGFb_bulk, method = "spearman")
+# H2: mTOR -> CSC for both definitions
+if (all(c("mTOR_bulk", "CSC_bulk") %in% colnames(test_df_wide))) {
+    cor_M_C_legacy <- cor.test(
+        test_df_wide$mTOR_bulk,
+        test_df_wide$CSC_bulk,
+        method = "spearman"
+    )
+    write_validation("\nH2a: mTOR -> CSC (legacy CSC_bulk)")
+    write_validation(sprintf(
+        "  Correlation: r = %.3f, p = %.3f %s",
+        cor_M_C_legacy$estimate, cor_M_C_legacy$p.value,
+        ifelse(cor_M_C_legacy$p.value < 0.05 & cor_M_C_legacy$estimate > 0.3,
+            "✓ SUPPORTED", "✗ NOT SUPPORTED"
+        )
+    ))
+}
 
-    write_validation("\nH3: Angio → TGFβ pathway")
+if (all(c("mTOR_bulk", "CSC_Yuan101") %in% colnames(test_df_wide))) {
+    cor_M_C_yuan <- cor.test(
+        test_df_wide$mTOR_bulk,
+        test_df_wide$CSC_Yuan101,
+        method = "spearman"
+    )
+    write_validation("\nH2b: mTOR -> CSC (Yuan CSC 101 chromatin)")
+    write_validation(sprintf(
+        "  Correlation: r = %.3f, p = %.3f %s",
+        cor_M_C_yuan$estimate, cor_M_C_yuan$p.value,
+        ifelse(cor_M_C_yuan$p.value < 0.05 & cor_M_C_yuan$estimate > 0.3,
+            "✓ SUPPORTED", "✗ NOT SUPPORTED"
+        )
+    ))
+}
+
+# H3: Angio -> TGFb
+if (all(c("Angio_bulk", "TGFb_bulk") %in% colnames(test_df_wide))) {
+    cor_A_T <- cor.test(
+        test_df_wide$Angio_bulk,
+        test_df_wide$TGFb_bulk,
+        method = "spearman"
+    )
+
+    write_validation("\nH3: Angio -> TGFβ pathway")
     write_validation(sprintf(
         "  Correlation: r = %.3f, p = %.3f %s",
         cor_A_T$estimate, cor_A_T$p.value,
@@ -568,7 +656,7 @@ if (nrow(test_df_wide) >= 3 && "Angio_bulk" %in% colnames(test_df_wide)) {
 }
 
 # =============================================================================
-# STEP 7: PUBLICATION FIGURES
+# STEP 7: PUBLICATION FIGURES (UPGRADED, NO PHEATMAP)
 # =============================================================================
 
 message("\n[STEP 7/9] Generating publication figures")
@@ -654,45 +742,81 @@ ggsave(file.path(FIG_DIR, "atac_csc_enrichment_mpos_vs_mneg.png"),
     width = 9, height = 8, dpi = 400
 )
 
-# Figure 3: Heatmap of module scores
+# Figure 3: Advanced sample-level ComplexHeatmap with row annotations
 heatmap_matrix <- scores_wide %>%
     dplyr::select(sample_id, all_of(required_modules)) %>%
     column_to_rownames("sample_id") %>%
     as.matrix()
 
-# Annotation for samples
 annotation_row <- samples %>%
     dplyr::select(sample_id, stage, csc_enriched) %>%
     dplyr::mutate(CSC = ifelse(csc_enriched, "m+", "m-")) %>%
     dplyr::select(sample_id, stage, CSC) %>%
     column_to_rownames("sample_id")
 
-ann_colors <- list(
-    stage = c("Normal" = "#2ECC71", "Papilloma" = "#F39C12", "SCC" = "#E74C3C"),
-    CSC = c("m+" = "#8E44AD", "m-" = "#95A5A6")
-)
+if (requireNamespace("ComplexHeatmap", quietly = TRUE) &&
+    requireNamespace("circlize", quietly = TRUE)) {
+    message("  Generating ComplexHeatmap for ATAC sample-level modules...")
 
-png(file.path(FIG_DIR, "atac_module_heatmap.png"),
-    width = 2400, height = 2000, res = 300
-)
-pheatmap(
-    heatmap_matrix,
-    cluster_rows = TRUE,
-    cluster_cols = FALSE,
-    scale = "column", # Z-score per module
-    color = colorRampPalette(c("blue", "white", "red"))(100),
-    annotation_row = annotation_row,
-    annotation_colors = ann_colors,
-    display_numbers = TRUE,
-    number_format = "%.2f",
-    fontsize = 11,
-    fontsize_number = 9,
-    main = "ATAC-seq module scores (z-scored)",
-    border_color = "grey60",
-    cellwidth = 60,
-    cellheight = 40
-)
-dev.off()
+    # Column-wise scaling (per module)
+    heatmap_scaled <- scale(heatmap_matrix)
+    rownames(heatmap_scaled) <- rownames(heatmap_matrix)
+    colnames(heatmap_scaled) <- colnames(heatmap_matrix)
+
+    ann_df <- annotation_row %>% as.data.frame()
+
+    ann_colors <- list(
+        stage = c("Normal" = "#2ECC71", "Papilloma" = "#F39C12", "SCC" = "#E74C3C"),
+        CSC   = c("m+" = "#8E44AD", "m-" = "#95A5A6")
+    )
+
+    ha_row <- ComplexHeatmap::rowAnnotation(
+        df = ann_df,
+        col = list(
+            stage = ann_colors$stage,
+            CSC   = ann_colors$CSC
+        ),
+        annotation_name_side = "top"
+    )
+
+    col_fun_atac <- circlize::colorRamp2(
+        c(-2, 0, 2),
+        c("blue", "white", "red")
+    )
+
+    ht_atac_samples <- ComplexHeatmap::Heatmap(
+        heatmap_scaled,
+        name = "Z-score",
+        col = col_fun_atac,
+        cluster_rows = TRUE,
+        cluster_columns = TRUE,
+        show_row_names = TRUE,
+        show_column_names = TRUE,
+        column_title = "ATAC Ras–CSC loop modules",
+        row_title = "Samples",
+        column_title_gp = grid::gpar(fontsize = 12, fontface = "bold"),
+        row_title_gp = grid::gpar(fontsize = 12, fontface = "bold"),
+        left_annotation = ha_row,
+        heatmap_legend_param = list(
+            title = "Module\nz-score",
+            at = c(-2, 0, 2),
+            labels = c("Low", "Mid", "High")
+        )
+    )
+
+    png(file.path(FIG_DIR, "atac_module_complex_heatmap_samples.png"),
+        width = 2600, height = 2200, res = 300
+    )
+    ComplexHeatmap::draw(
+        ht_atac_samples,
+        heatmap_legend_side = "right",
+        annotation_legend_side = "right",
+        merge_legend = TRUE
+    )
+    dev.off()
+} else {
+    message("  [WARN] ComplexHeatmap or circlize not available; skipping advanced sample heatmap.")
+}
 
 # Figure 4: Progression trajectory
 progression_plot_data <- scores_long %>%
@@ -744,29 +868,119 @@ if (exists("cross_omics") && nrow(cross_omics) > 0) {
     )
 }
 
-# Figure 6: Correlation matrix
-if (nrow(scores_wide) >= 3) {
-    cor_matrix <- scores_wide %>%
+# Figure 6: ATAC module correlation matrix + RNA vs ATAC loop adjacency (ComplexHeatmap)
+if (nrow(scores_wide) >= 3 &&
+    requireNamespace("ComplexHeatmap", quietly = TRUE) &&
+    requireNamespace("circlize", quietly = TRUE)) {
+    # Full ATAC module correlation (required modules)
+    cor_matrix_atac <- scores_wide %>%
         dplyr::select(all_of(required_modules)) %>%
         cor(method = "spearman", use = "complete.obs")
 
-    png(file.path(FIG_DIR, "atac_module_correlation_matrix.png"),
-        width = 2000, height = 2000, res = 300
+    col_fun_corr <- circlize::colorRamp2(
+        c(-1, 0, 1),
+        c("blue", "white", "red")
     )
-    pheatmap(
-        cor_matrix,
+
+    ht_atac_corr <- ComplexHeatmap::Heatmap(
+        cor_matrix_atac,
+        name = "ATAC\nrho",
+        col = col_fun_corr,
         cluster_rows = FALSE,
-        cluster_cols = FALSE,
-        display_numbers = TRUE,
-        number_format = "%.2f",
-        color = colorRampPalette(c("blue", "white", "red"))(100),
-        breaks = seq(-1, 1, length.out = 101),
-        main = "Module correlation matrix (Spearman)",
-        fontsize = 12,
-        fontsize_number = 11,
-        border_color = "grey60"
+        cluster_columns = FALSE,
+        show_row_names = TRUE,
+        show_column_names = TRUE,
+        column_title = "ATAC module correlation matrix (Spearman)",
+        row_title = "",
+        column_title_gp = grid::gpar(fontsize = 12, fontface = "bold"),
+        heatmap_legend_param = list(
+            title = "Spearman\nρ",
+            at = c(-1, 0, 1),
+            labels = c("-1", "0", "1")
+        )
+    )
+
+    png(file.path(FIG_DIR, "atac_module_correlation_matrix_complex.png"),
+        width = 2200, height = 2000, res = 300
+    )
+    ComplexHeatmap::draw(
+        ht_atac_corr,
+        heatmap_legend_side = "right",
+        merge_legend = TRUE
     )
     dev.off()
+
+    # Loop adjacency comparison (RNA vs ATAC) if RNA available
+    if (exists("rna_scores")) {
+        modules_for_corr <- intersect(
+            c("TGFb_bulk", "Angio_bulk", "CSC_bulk", "mTOR_bulk"),
+            colnames(rna_scores)
+        )
+
+        # Only proceed if we have the core loop modules in both omics
+        if (length(modules_for_corr) >= 3 &&
+            all(modules_for_corr %in% colnames(cor_matrix_atac))) {
+            # RNA loop adjacency
+            rna_corr <- rna_scores %>%
+                dplyr::select(all_of(modules_for_corr)) %>%
+                cor(method = "spearman", use = "complete.obs")
+
+            # ATAC loop adjacency (subset to same modules)
+            atac_corr_loop <- cor_matrix_atac[modules_for_corr, modules_for_corr]
+
+            col_fun_loop <- circlize::colorRamp2(
+                c(-1, 0, 1),
+                c("blue", "white", "red")
+            )
+
+            ht_rna <- ComplexHeatmap::Heatmap(
+                rna_corr,
+                name = "RNA\nrho",
+                col = col_fun_loop,
+                cluster_rows = FALSE,
+                cluster_columns = FALSE,
+                show_row_names = TRUE,
+                show_column_names = TRUE,
+                column_title = "RNA-seq loop adjacency",
+                row_title = "",
+                column_title_gp = grid::gpar(fontsize = 12, fontface = "bold"),
+                heatmap_legend_param = list(
+                    title = "Spearman\nρ",
+                    at = c(-1, 0, 1),
+                    labels = c("-1", "0", "1")
+                )
+            )
+
+            ht_atac_loop <- ComplexHeatmap::Heatmap(
+                atac_corr_loop,
+                name = "ATAC\nrho",
+                col = col_fun_loop,
+                cluster_rows = FALSE,
+                cluster_columns = FALSE,
+                show_row_names = TRUE,
+                show_column_names = TRUE,
+                column_title = "ATAC loop adjacency",
+                row_title = "",
+                column_title_gp = grid::gpar(fontsize = 12, fontface = "bold")
+            )
+
+            png(file.path(FIG_DIR, "atac_rna_loop_adjacency_complex_heatmap.png"),
+                width = 2600, height = 1400, res = 300
+            )
+            ComplexHeatmap::draw(
+                ht_rna + ht_atac_loop,
+                heatmap_legend_side = "right",
+                merge_legend = TRUE
+            )
+            dev.off()
+        } else {
+            message("  [WARN] Not enough overlapping loop modules for RNA vs ATAC adjacency ComplexHeatmap.")
+        }
+    } else {
+        message("  [WARN] rna_scores object missing; skipping RNA vs ATAC adjacency figure.")
+    }
+} else {
+    message("  [WARN] Skipping correlation/adjacency ComplexHeatmap; either n < 3 or ComplexHeatmap/circlize missing.")
 }
 
 # =============================================================================
@@ -786,10 +1000,13 @@ calibration_targets <- scores_long %>%
     ) %>%
     pivot_wider(names_from = module, values_from = c(mean_score, sd_score)) %>%
     mutate(
-        C_target = mean_score_CSC_bulk,
-        A_target = mean_score_Angio_bulk,
-        T_target = mean_score_TGFb_bulk,
-        M_target = mean_score_mTOR_bulk
+        # New primary C target based on Yuan CSC 101 module
+        C_target        = mean_score_CSC_Yuan101,
+        # Legacy C target from original CSC_bulk
+        C_target_legacy = if ("mean_score_CSC_bulk" %in% colnames(.)) mean_score_CSC_bulk else NA_real_,
+        A_target        = mean_score_Angio_bulk,
+        T_target        = mean_score_TGFb_bulk,
+        M_target        = mean_score_mTOR_bulk
     )
 
 write_csv(
@@ -808,8 +1025,9 @@ for (i in seq_len(nrow(calibration_targets))) {
         calibration_targets$stage[i]
     ))
     write_validation(sprintf(
-        "  C=%.3f, A=%.3f, T=%.3f, M=%.3f",
+        "  C_Yuan101=%.3f, C_legacy=%.3f, A=%.3f, T=%.3f, M=%.3f",
         calibration_targets$C_target[i],
+        calibration_targets$C_target_legacy[i],
         calibration_targets$A_target[i],
         calibration_targets$T_target[i],
         calibration_targets$M_target[i]
@@ -828,9 +1046,9 @@ write_validation("==============================================\n")
 
 write_validation(sprintf("Total samples processed: %d", nrow(samples)))
 write_validation(sprintf("Total genes with accessibility: %d", nrow(access_wide)))
-write_validation(sprintf("Modules computed: %d", length(required_modules)))
+write_validation(sprintf("Modules computed (required set): %d", length(required_modules)))
 
-write_validation("\nGene coverage per module:")
+write_validation("\nGene coverage per required module:")
 for (mod in required_modules) {
     genes_in_set <- length(gene_sets[[mod]])
     genes_in_data <- sum(gene_sets[[mod]] %in% access_wide$gene_symbol)

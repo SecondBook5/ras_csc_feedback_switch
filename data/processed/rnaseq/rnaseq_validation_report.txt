@@ -1,6 +1,6 @@
 ==============================================
 BULK RNA-SEQ VALIDATION REPORT
-Generated: 2025-12-07 07:54:06.182713
+Generated: 2025-12-07 17:32:15.968133
 ==============================================
 
 Expression matrices built:
@@ -26,7 +26,7 @@ Module gene sets:
   TGFb_bulk: 35 genes
   mTOR_bulk: 59 genes
   Angio_bulk: 32 genes
-  CSC_bulk: 48 genes
+  CSC_bulk: 140 genes
 
 ==============================================
 STATISTICAL TESTS: Module ~ Condition
@@ -51,25 +51,25 @@ Angio_bulk:
   PDV_WT→LeprKO: p=1.06e-01, d=-1.22 ✓ LARGE EFFECT
 
 CSC_bulk:
-  ANOVA: F=4.08, p=1.69e-02, η²=0.490 ✓ SIGNIFICANT
-  Normal→Papilloma: p=1.68e-01, d=1.00
-  Papilloma→SCC: p=3.51e-02, d=1.19
-  PDV_WT→LeprKO: p=8.84e-02, d=-1.24 ✓ LARGE EFFECT
+  ANOVA: F=2.86, p=5.59e-02, η²=0.402 ✗ NS
+  Normal→Papilloma: p=1.52e-01, d=1.04
+  Papilloma→SCC: p=1.14e-01, d=0.96
+  PDV_WT→LeprKO: p=1.69e-01, d=-1.08 ✓ LARGE EFFECT
 
 ==============================================
 CROSS-DATASET CONSISTENCY
 ==============================================
 
 SCC samples across datasets (Bl6 vs PAP_SCC):
-  Spearman correlation: r=1.000, p=0.083 ⚠ WEAK
+  Spearman correlation: r=-0.200, p=0.917 ⚠ WEAK
     Angio_bulk: Bl6=0.41, PAP=0.40, diff=0.01
-    CSC_bulk: Bl6=0.43, PAP=0.42, diff=0.01
+    CSC_bulk: Bl6=0.45, PAP=0.32, diff=0.13
     TGFb_bulk: Bl6=0.10, PAP=0.35, diff=0.25
     mTOR_bulk: Bl6=0.35, PAP=0.36, diff=0.01
 
 PCA Analysis:
-  PC1 variance: 90.5%
-  PC2 variance: 8.3%
+  PC1 variance: 88.7%
+  PC2 variance: 10.4%
   PC1 ~ dataset: p=1.000 ✓ NO BATCH EFFECT
 
 ==============================================
@@ -77,14 +77,14 @@ CALIBRATION TARGETS EXPORTED
 ==============================================
 
 Bl6 - Normal:
-  C=-0.861, A=-0.816, T=-0.193, M=-0.705
+  C=-0.907, A=-0.816, T=-0.193, M=-0.705
 Bl6 - SCC:
-  C=0.431, A=0.408, T=0.096, M=0.352
+  C=0.453, A=0.408, T=0.096, M=0.352
 PAP_SCC - Papilloma:
-  C=-0.416, A=-0.396, T=-0.349, M=-0.360
+  C=-0.319, A=-0.396, T=-0.349, M=-0.360
 PAP_SCC - SCC:
-  C=0.416, A=0.396, T=0.349, M=0.360
+  C=0.319, A=0.396, T=0.349, M=0.360
 PDV - PDV_LeprKO:
-  C=-0.304, A=-0.355, T=-0.207, M=-0.235
+  C=-0.233, A=-0.355, T=-0.207, M=-0.235
 PDV - PDV_WT:
-  C=0.304, A=0.355, T=0.207, M=0.235
+  C=0.233, A=0.355, T=0.207, M=0.235
