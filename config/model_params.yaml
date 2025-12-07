@@ -1,73 +1,160 @@
-# Parameter sets for Ras–CSC feedback model
-# Generated from RNA-seq derivation script
+# ======================================================================
+# Ras–CSC Feedback Model: Initial Parameter Priors
+#
+# These values are NOT calibrated outputs. They are:
+#   - biological priors
+#   - Fermi-estimate justifications
+#   - stable initial guesses for optimization
+#
+# The calibrated parameters are stored in:
+#   results/calibration/model_params_fitted.json
+# ======================================================================
 
-default_model: model_A_feedback
+initial_params:
 
-models:
-  model_A_feedback:
-    description: "Full Ras–CSC–angiogenesis–leptin feedback (Malignant Switch)"
-    params:
-      # Input
-      f_ras: 1.0
+  # --------------------------------------------------------------------
+  # CSC Dynamics Parameters
+  # --------------------------------------------------------------------
 
-      # Equation 1: CSC Dynamics
-      k_C_ras: 0.0526    # Baseline Ras drive (Weak)
-      k_C_TGFb: 0.1000   # Direct TGFb contribution (Minor)
-      K_C: 0.5000        # Switch threshold
-      n_C: 4.0           # Switch steepness
-      k_C_M: 19.9446     # mTOR Feedback Strength (MASSIVE - The Driver)
-      k_C_deg: 1.0
+  rho_C: 0.15
+  # Ras → CSC seeding rate.
+  # Fermi estimate: Weak direct Ras influence on stemness (10–20% of max).
 
-      # Equation 2: Angiogenesis
-      k_A_ras: 0.0000    # Ras alone doesn't drive angio
-      k_A_C: 1.0000      # CSCs drive angio
-      k_A_deg: 1.0
+  eta_C_M: 2.5
+  # mTOR → CSC amplification strength.
+  # Fermi estimate: mTOR strongly biases self-renewal; value > 1 is expected.
 
-      # Equation 3: TGFb
-      k_T_A: 1.0000      # Angio brings TGFb sources
-      k_T_C: 0.0000      # Tumor doesn't secrete TGFb
-      k_T_deg: 1.0
+  K_C: 0.25
+  # TGFβ → CSC half-maximal activation.
+  # Fermi estimate: CSCs respond to low TGFβ levels; threshold is low.
 
-      # Equation 4: Receptor (Lepr)
-      k_R_prod: 0.9500   # Max receptor level
-      K_R: 0.5000        # Induction threshold
-      p_R: 4.0           # Induction steepness
-      k_R_deg: 1.0
+  n_C: 3.5
+  # TGFβ Hill coefficient.
+  # Biological justification: CSC induction is switch-like, n ≈ 3–5.
 
-      # Equation 5: Leptin (QSS)
-      L_sys: 0.1000      # Systemic baseline
-      k_L_A: 1.0000      # Angio-delivered Leptin
+  delta_C: 0.8
+  # CSC turnover rate.
+  # Fermi estimate: fractional decay rate < 1 per unit-time scaling.
 
-      # Equation 6: mTOR (QSS)
-      k_M_max: 0.9500    # Max activity
-      K_M: 0.5025        # Activation threshold
-      q_M: 4.0           # Activation steepness
+  eta_C: 1.2
+  # Direct TGFβ → CSC contribution.
+  # Moderate effect relative to mTOR.
 
-  model_B_no_feedback:
-    description: "Feedback removed (Control/Inhibited State)"
-    params:
-      # Copy all params from Model A...
-      f_ras: 1.0
-      k_C_ras: 0.0526
-      k_C_TGFb: 0.1000
-      K_C: 0.5000
-      n_C: 4.0
-      k_C_deg: 1.0
-      k_A_ras: 0.0000
-      k_A_C: 1.0000
-      k_A_deg: 1.0
-      k_T_A: 1.0000
-      k_T_C: 0.0000
-      k_T_deg: 1.0
-      k_R_prod: 0.9500
-      K_R: 0.5000
-      p_R: 4.0
-      k_R_deg: 1.0
-      L_sys: 0.1000
-      k_L_A: 1.0000
-      k_M_max: 0.9500
-      K_M: 0.5025
-      q_M: 4.0
-      
-      # ...EXCEPT the Feedback term, which we kill to simulate inhibition
-      k_C_M: 0.0000      # FEEDBACK BROKEN
+
+  # --------------------------------------------------------------------
+  # Angiogenesis Parameters
+  # --------------------------------------------------------------------
+
+  alpha_A: 0.4
+  # Ras → angiogenesis contribution.
+  # Ras alone gives only partial vascular induction.
+
+  beta_A: 1.0
+  # CSC → angiogenesis.
+  # CSCs secrete VEGF; strong positive effect.
+
+  delta_A: 0.6
+  # Angiogenic decay.
+  # Fermi: moderate turnover, slower than CSC decay.
+
+
+  # --------------------------------------------------------------------
+  # TGFβ Production Parameters
+  # --------------------------------------------------------------------
+
+  alpha_T: 0.8
+  # Angio → TGFβ.
+  # Vascular remodeling brings stromal TGFβ; strong effect.
+
+  gamma_T: 0.15
+  # CSC → TGFβ.
+  # Weak secretion relative to angiogenic contribution.
+
+  delta_T: 1.2
+  # TGFβ decay rate.
+  # Biologically fast-turnover cytokine.
+
+
+  # --------------------------------------------------------------------
+  # LEPR Signaling Parameters
+  # --------------------------------------------------------------------
+
+  eta_R: 0.6
+  # TGFβ → LEPR upregulation.
+  # Moderate induction strength.
+
+  K_R: 0.35
+  # TGFβ → LEPR half-maximal induction.
+
+  p_R: 2.5
+  # Hill coefficient for LEPR induction.
+  # Receptor induction tends to be cooperative (n ≈ 2–3).
+
+  delta_R: 0.6
+  # LEPR decay rate.
+
+
+  # --------------------------------------------------------------------
+  # Leptin Parameters
+  # --------------------------------------------------------------------
+
+  mu_L: 0.9
+  # Angio → leptin delivery.
+  # Well-supported vasculature enables high leptin flux.
+
+  delta_L: 0.6
+  # Leptin clearance rate.
+
+
+  # --------------------------------------------------------------------
+  # mTOR Activation Parameters
+  # --------------------------------------------------------------------
+
+  eta_M: 1.0
+  # Maximal mTOR activation strength.
+
+  K_M: 0.25
+  # LR complex → mTOR activation threshold.
+  # Fermi: mTOR is highly sensitive to upstream signals.
+
+  q_M: 3.5
+  # Hill coefficient for LR → mTOR.
+  # Cooperative activation expected.
+
+  delta_M: 0.6
+  # mTOR relaxation/decay rate.
+
+
+# ======================================================================
+# Parameter Bounds for Calibration
+# These are soft biological limits fed to the optimizer.
+# ======================================================================
+
+bounds:
+  rho_C:   [0.05, 0.5]
+  eta_C_M: [0.5, 5.0]
+  K_C:     [0.1, 0.5]
+  n_C:     [2.0, 5.0]
+  delta_C: [0.3, 2.0]
+
+  beta_A:  [0.3, 2.0]
+  delta_A: [0.3, 1.5]
+
+  alpha_T: [0.3, 2.0]
+  delta_T: [0.5, 3.0]
+
+  eta_M:   [0.3, 2.0]
+  delta_M: [0.3, 1.5]
+
+
+# ======================================================================
+# Condition → Ras Mapping
+# Used in calibration + hypothesis tests.
+# ======================================================================
+
+ras_mapping:
+  Normal:     0.3
+  Papilloma:  0.6
+  SCC:        0.95
+  PDV_WT:     0.95
+  PDV_LeprKO: 0.95
