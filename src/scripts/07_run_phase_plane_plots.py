@@ -15,65 +15,46 @@ What this script does:
     1. Loads the calibrated parameter set.
     2. Picks a Ras input in the "danger zone" (user configurable).
     3. Computes low-branch and high-branch steady states at that Ras.
-    4. For each branch, builds a 2D C–M phase plane:
+    4. Builds a 2D C–M phase plane for each branch:
          - Holds A, T, R, L fixed at the branch steady state.
          - Sweeps over a grid of (C, M) pairs.
          - Evaluates the ODE right-hand side to get (dC/dt, dM/dt).
-         - Plots a vector field and marks the steady state.
-
-Why this is separate:
-    - Calibration and hypothesis tests establish that the model makes
-      sense numerically.
-    - This script gives a geometric view of the feedback loop that is
-      easier to explain in figures and text.
+         - Plots a vector field, nullclines, and marks the steady state.
+         - Overlays sample trajectories projected into the C–M plane.
+    5. Computes Jacobians at the low- and high-branch steady states
+       via finite differences and visualizes their eigenvalue spectra.
 
 Outputs:
     - figures/phase_plane/phase_plane_C_M_CORRECTED.png
+    - figures/phase_plane/phase_plane_C_M_jacobian_spectra_CORRECTED.png
 """
 
 from __future__ import annotations
 
-# Import typing utilities for clearer type hints
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List
 
-# Import standard library modules
-# Import json to read the calibrated parameter file
 import json
-# Import sys to modify the Python path so src/ can be imported cleanly
 import sys
-# Import Path for filesystem-safe path handling
 from pathlib import Path
 
-# Import numerical and plotting libraries
-# Import numpy for array operations
 import numpy as np
-# Import matplotlib for plotting
 import matplotlib.pyplot as plt
-# Import seaborn to set a publication-friendly style
 import seaborn as sns
-
 
 # ----------------------------------------------------------------------
 # Ensure src/ is on the Python path and import core model utilities
 # ----------------------------------------------------------------------
 
-#   Get the directory of this script file
 CURRENT_DIR: Path = Path(__file__).resolve().parent
-#   The src root is the parent of the scripts directory
 SRC_ROOT: Path = CURRENT_DIR.parent
-#   The project root is the parent of src/
 ROOT: Path = SRC_ROOT.parent
 
-#   Add src root to sys.path if not already present
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-#   Import the ODE right-hand side and steady-state integrator
 try:
-    #   ras_csc_ode is the ODE RHS; simulate_steady_state integrates it
     from ras_csc_core import ras_csc_ode, simulate_steady_state  # type: ignore
 except ImportError as exc:  # pragma: no cover - defensive
-    #   Raise a descriptive error if the core module cannot be imported
     raise ImportError(
         "Could not import 'ras_csc_ode' and 'simulate_steady_state' "
         "from 'ras_csc_core'. Ensure ras_csc_core.py is in src/ and "
@@ -85,21 +66,19 @@ except ImportError as exc:  # pragma: no cover - defensive
 # PATH CONSTANTS AND PLOTTING STYLE
 # ======================================================================
 
-#   Path to the calibrated parameter JSON from the calibration step
 PARAM_JSON: Path = ROOT / "results" / "calibration" / "optimized_parameters_CORRECTED.json"
-
-#   Directory for advanced phase-plane figures
 PHASE_PLANE_FIG_DIR: Path = ROOT / "figures" / "phase_plane"
-
-#   Make sure the figure directory exists
 PHASE_PLANE_FIG_DIR.mkdir(parents=True, exist_ok=True)
 
-#   Set a clean whitegrid style for publication-quality figures
 sns.set_style("whitegrid")
-#   Increase DPI for sharper saved images
 plt.rcParams["figure.dpi"] = 300
-#   Set base font size for clarity without changing font family
 plt.rcParams["font.size"] = 11
+
+COLOR_STABLE = "#009E73"   # for locally stable steady states
+COLOR_UNSTABLE = "#D55E00" # for unstable or marginal states
+COLOR_TRAJ_1 = "#0072B2"
+COLOR_TRAJ_2 = "#CC79A7"
+COLOR_TRAJ_3 = "#F0E442"
 
 
 # ======================================================================
@@ -116,54 +95,305 @@ def load_parameters() -> Dict[str, float]:
         - Non-empty JSON content.
         - Numeric conversion of values.
 
-    Returns:
-        Dict[str, float]:
-            Mapping from parameter names to float values.
+    Returns
+    -------
+    Dict[str, float]
+        Mapping from parameter names to float values.
 
-    Raises:
-        FileNotFoundError:
-            If the JSON parameter file does not exist.
-        ValueError:
-            If the JSON content is empty, malformed, or non-numeric.
+    Raises
+    ------
+    FileNotFoundError
+        If the JSON parameter file does not exist.
+    ValueError
+        If the JSON content is empty, malformed, or non-numeric.
     """
-    #   Check for presence of the calibrated parameter file
     if not PARAM_JSON.exists():
-        #   Raise an explicit error if the file is missing
         raise FileNotFoundError(
             f"Calibrated parameter file not found at: {PARAM_JSON}. "
             "Run run_model_calibration.py before generating phase-plane plots."
         )
 
-    #   Open the JSON file and load its contents
     with PARAM_JSON.open("r", encoding="utf-8") as f:
         raw: Any = json.load(f)
 
-    #   Validate that the JSON content is a non-empty dictionary
     if not isinstance(raw, dict) or not raw:
-        #   Raise an error if the content is unusable
         raise ValueError(
             f"Parameter file {PARAM_JSON} is empty or malformed."
         )
 
-    #   Create a clean dictionary with float-cast values
     params: Dict[str, float] = {}
-    #   Iterate over all key-value pairs from the JSON
     for key, value in raw.items():
         try:
-            #   Convert each value to float defensively
             params[str(key)] = float(value)
         except (TypeError, ValueError) as exc:
-            #   If conversion fails, raise a detailed error
             raise ValueError(
                 f"Parameter '{key}' with value '{value}' could not be "
                 "converted to float."
             ) from exc
 
-    #   Print a brief summary for sanity
     print(f"[INFO] Loaded {len(params)} calibrated parameters from {PARAM_JSON}")
-
-    #   Return the cleaned parameter dictionary
     return params
+
+
+# ======================================================================
+# NUMERIC JACOBIAN (FINITE DIFFERENCES)
+# ======================================================================
+
+def compute_numeric_jacobian(
+    y_ss: np.ndarray,
+    params: Dict[str, float],
+    f_ras: float,
+    eps: float = 1e-4,
+) -> np.ndarray:
+    """
+    Compute the 6×6 Jacobian matrix at a steady state using finite differences.
+
+    Strategy
+    --------
+    For each state variable y_k:
+        1. Perturb y_k by ±eps (central difference).
+        2. Evaluate ras_csc_ode at the perturbed states.
+        3. Approximate column k of the Jacobian as:
+               (f(y + e_k*eps) - f(y - e_k*eps)) / (2*eps)
+
+    This avoids needing an analytic Jacobian in ras_csc_core.
+
+    Parameters
+    ----------
+    y_ss : np.ndarray
+        Steady-state vector of length 6.
+    params : Dict[str, float]
+        Calibrated parameter dictionary.
+    f_ras : float
+        Ras input level at which the Jacobian is evaluated.
+    eps : float, optional
+        Perturbation step size used for finite differences.
+
+    Returns
+    -------
+    np.ndarray
+        A 6×6 Jacobian matrix evaluated at (y_ss, f_ras, params).
+    """
+    y_base: np.ndarray = np.asarray(y_ss, dtype=float).copy()
+    if y_base.shape != (6,):
+        raise ValueError(
+            f"compute_numeric_jacobian expects a 6D state vector; got shape {y_base.shape}."
+        )
+
+    f_base: np.ndarray = ras_csc_ode(
+        y=y_base,
+        t=0.0,
+        f_ras=float(f_ras),
+        params=params,
+    )
+    f_base = np.asarray(f_base, dtype=float)
+
+    J: np.ndarray = np.zeros((6, 6), dtype=float)
+
+    for k in range(6):
+        y_plus: np.ndarray = y_base.copy()
+        y_minus: np.ndarray = y_base.copy()
+
+        y_plus[k] += eps
+        if y_minus[k] - eps >= 0.0:
+            y_minus[k] -= eps
+        else:
+            # If subtracting eps would go negative, use forward difference
+            y_minus[k] = y_base[k]
+            y_plus[k] = y_base[k] + eps
+
+        f_plus: np.ndarray = ras_csc_ode(
+            y=y_plus,
+            t=0.0,
+            f_ras=float(f_ras),
+            params=params,
+        )
+        f_minus: np.ndarray = ras_csc_ode(
+            y=y_minus,
+            t=0.0,
+            f_ras=float(f_ras),
+            params=params,
+        )
+
+        f_plus = np.asarray(f_plus, dtype=float)
+        f_minus = np.asarray(f_minus, dtype=float)
+
+        denom: float = float(2.0 * eps) if y_minus[k] != y_plus[k] else float(eps)
+        if denom == 0.0:
+            raise ZeroDivisionError("Jacobian finite-difference denominator is zero.")
+
+        J[:, k] = (f_plus - f_minus) / denom
+
+    return J
+
+
+def summarize_jacobian_stability(
+    J: np.ndarray,
+    label: str,
+) -> Tuple[np.ndarray, float]:
+    """
+    Compute eigenvalues of the Jacobian and report the largest real part.
+
+    Parameters
+    ----------
+    J : np.ndarray
+        6×6 Jacobian matrix.
+    label : str
+        Label used for printed summaries (e.g., 'low branch').
+
+    Returns
+    -------
+    Tuple[np.ndarray, float]
+        - eigenvalues (complex array of shape (6,))
+        - max_real: largest real part among the eigenvalues
+    """
+    eigvals: np.ndarray = np.linalg.eigvals(J)
+    max_real: float = float(np.max(np.real(eigvals)))
+
+    print(f"\n[INFO] Jacobian stability summary for {label}:")
+    print(f"  Max Re(λ) = {max_real:.4f}")
+    print("  Eigenvalues:")
+    for val in eigvals:
+        print(f"    λ = {val.real: .4f} + {val.imag: .4f}i")
+
+    return eigvals, max_real
+
+
+def plot_jacobian_spectra(
+    eig_low: np.ndarray,
+    eig_high: np.ndarray,
+    f_ras: float,
+) -> None:
+    """
+    Plot eigenvalue spectra for low- and high-branch Jacobians in the complex plane.
+
+    Parameters
+    ----------
+    eig_low : np.ndarray
+        Eigenvalues at the low-branch steady state.
+    eig_high : np.ndarray
+        Eigenvalues at the high-branch steady state.
+    f_ras : float
+        Ras input level for annotation.
+    """
+    fig, axes = plt.subplots(
+        1,
+        2,
+        figsize=(7.0, 3.0),
+        sharex=True,
+        sharey=True,
+    )
+
+    ax_low, ax_high = axes
+
+    # Low branch spectrum
+    ax_low.axvline(0.0, color="grey", linestyle="--", linewidth=0.8)
+    ax_low.scatter(
+        np.real(eig_low),
+        np.imag(eig_low),
+        s=35,
+        color=COLOR_STABLE,
+        edgecolor="black",
+        linewidth=0.6,
+    )
+    ax_low.set_title("Low-branch Jacobian spectrum")
+    ax_low.set_xlabel("Re(λ)")
+    ax_low.set_ylabel("Im(λ)")
+    ax_low.grid(alpha=0.3)
+
+    # High branch spectrum
+    ax_high.axvline(0.0, color="grey", linestyle="--", linewidth=0.8)
+    ax_high.scatter(
+        np.real(eig_high),
+        np.imag(eig_high),
+        s=35,
+        color=COLOR_UNSTABLE,
+        edgecolor="black",
+        linewidth=0.6,
+    )
+    ax_high.set_title("High-branch Jacobian spectrum")
+    ax_high.set_xlabel("Re(λ)")
+    ax_high.grid(alpha=0.3)
+
+    fig.suptitle(f"Jacobian eigenvalue spectra at Ras = {f_ras:.2f}", fontsize=12)
+    fig.subplots_adjust(
+        left=0.09,
+        right=0.98,
+        bottom=0.18,
+        top=0.82,
+        wspace=0.25,
+    )
+
+    out_png: Path = PHASE_PLANE_FIG_DIR / "phase_plane_C_M_jacobian_spectra_CORRECTED.png"
+    fig.savefig(out_png, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"[SAVED] Jacobian spectra figure to {out_png}")
+
+
+# ======================================================================
+# TRAJECTORY INTEGRATION (FOR OVERLAYS)
+# ======================================================================
+
+def integrate_trajectory_euler(
+    y0: List[float],
+    params: Dict[str, float],
+    f_ras: float,
+    t_max: float = 200.0,
+    dt: float = 0.5,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Integrate a trajectory in the full 6D system using explicit Euler,
+    then return the projected C(t) and M(t) coordinates.
+
+    This is intended purely for visualization: trajectories are used to
+    illustrate how trajectories move in the C–M plane for a fixed Ras.
+
+    Parameters
+    ----------
+    y0 : List[float]
+        Initial 6D state vector.
+    params : Dict[str, float]
+        Calibrated parameter dictionary.
+    f_ras : float
+        Ras input level.
+    t_max : float, optional
+        Final time for integration.
+    dt : float, optional
+        Time step for explicit Euler.
+
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray]
+        - C_traj: C(t) samples
+        - M_traj: M(t) samples
+    """
+    y: np.ndarray = np.asarray(y0, dtype=float).copy()
+    if y.shape != (6,):
+        raise ValueError(
+            f"integrate_trajectory_euler expects a 6D state; got shape {y.shape}."
+        )
+
+    n_steps: int = int(np.ceil(t_max / dt))
+    C_traj: List[float] = []
+    M_traj: List[float] = []
+
+    for _ in range(n_steps):
+        C_traj.append(float(y[0]))
+        M_traj.append(float(y[5]))
+
+        dy_dt: np.ndarray = ras_csc_ode(
+            y=y,
+            t=0.0,
+            f_ras=float(f_ras),
+            params=params,
+        )
+        dy_dt = np.asarray(dy_dt, dtype=float)
+
+        y = y + dt * dy_dt
+        y = np.maximum(y, 0.0)
+
+    return np.asarray(C_traj, dtype=float), np.asarray(M_traj, dtype=float)
 
 
 # ======================================================================
@@ -184,61 +414,36 @@ def compute_vector_field_C_M(
     """
     Compute the projected vector field (dC/dt, dM/dt) on a C–M grid.
 
-    Strategy:
-        1. Set up a regular grid in the C–M plane.
-        2. For each grid point, construct a full state:
-             y = [C, A_fixed, T_fixed, R_fixed, L_fixed, M].
-        3. Evaluate the ODE RHS:
-             dy/dt = ras_csc_ode(y, t, f_ras, params)
-        4. Extract dC/dt and dM/dt at each grid point.
+    Strategy
+    --------
+    1. Set up a regular grid in the C–M plane.
+    2. For each grid point, construct a full state:
+         y = [C, A_fixed, T_fixed, R_fixed, L_fixed, M].
+    3. Evaluate the ODE RHS:
+         dy/dt = ras_csc_ode(y, t, f_ras, params)
+    4. Extract dC/dt and dM/dt at each grid point.
 
     This gives a 2D slice through the full 6D system, which helps
     visualize attraction toward the low- and high-CSC states.
 
-    Args:
-        params:
-            Calibrated parameter dictionary.
-        f_ras:
-            Ras input level at which the slice is taken.
-        A_fixed:
-            Fixed angiogenesis level used in the slice.
-        T_fixed:
-            Fixed TGFβ level used in the slice.
-        R_fixed:
-            Fixed LEPR level used in the slice.
-        L_fixed:
-            Fixed leptin level used in the slice.
-        C_range:
-            Tuple (C_min, C_max) defining the C axis range.
-        M_range:
-            Tuple (M_min, M_max) defining the M axis range.
-        n_grid:
-            Number of grid points along each axis.
-
-    Returns:
-        Tuple of:
-            - CC: 2D array of C coordinates.
-            - MM: 2D array of M coordinates.
-            - dC: 2D array of dC/dt values.
-            - dM: 2D array of dM/dt values.
+    Returns
+    -------
+    Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]
+        - CC: 2D array of C coordinates.
+        - MM: 2D array of M coordinates.
+        - dC: 2D array of dC/dt values.
+        - dM: 2D array of dM/dt values.
     """
-    #   Create a linearly spaced grid for C
     C_vals: np.ndarray = np.linspace(C_range[0], C_range[1], int(n_grid))
-    #   Create a linearly spaced grid for M
     M_vals: np.ndarray = np.linspace(M_range[0], M_range[1], int(n_grid))
 
-    #   Build a meshgrid so each (C,M) combination is represented
     CC, MM = np.meshgrid(C_vals, M_vals)
 
-    #   Allocate arrays for the time derivatives
     dC: np.ndarray = np.zeros_like(CC, dtype=float)
     dM: np.ndarray = np.zeros_like(MM, dtype=float)
 
-    #   Loop over the grid indices for C and M
     for i in range(CC.shape[0]):
-        #   Inner loop over columns for each row
         for j in range(CC.shape[1]):
-            #   Build the full 6D state vector at this grid point
             y: np.ndarray = np.array(
                 [
                     float(CC[i, j]),   # C
@@ -251,24 +456,21 @@ def compute_vector_field_C_M(
                 dtype=float,
             )
 
-            #   Evaluate the ODE right-hand side at t=0
-            dy_dt = ras_csc_ode(
+            dy_dt: np.ndarray = ras_csc_ode(
                 y=y,
                 t=0.0,
                 f_ras=float(f_ras),
                 params=params,
             )
 
-            #   Extract dC/dt and dM/dt from the derivative vector
             dC[i, j] = float(dy_dt[0])
             dM[i, j] = float(dy_dt[5])
 
-    #   Return the grid and derivative arrays
     return CC, MM, dC, dM
 
 
 # ======================================================================
-# PHASE-PLANE PLOT FOR C–M
+# PHASE-PLANE PLOT FOR C–M (WITH TRAJECTORIES AND JACOBIANS)
 # ======================================================================
 
 def plot_C_M_phase_plane(
@@ -283,13 +485,17 @@ def plot_C_M_phase_plane(
         - colored streamlines (direction field),
         - speed background,
         - dC/dt = 0 and dM/dt = 0 nullclines,
-        - low- and high-branch steady states marked.
+        - low- and high-branch steady states marked and colored by
+          local stability (from Jacobian eigenvalues),
+        - sample trajectories overlaid in C–M space.
 
     Panel A: slice near the low-CSC branch.
     Panel B: slice near the high-CSC branch.
-    """
 
-    # Compute low-branch steady state from a benign-like initial condition
+    Also computes Jacobians at the two steady states and writes a
+    separate Jacobian eigenvalue spectrum figure.
+    """
+    # --- Steady states at this Ras value ---
     y_low: np.ndarray = simulate_steady_state(
         f_ras=float(f_ras),
         params=params,
@@ -298,7 +504,6 @@ def plot_C_M_phase_plane(
         n_steps=2000,
     )
 
-    # Compute high-branch steady state from a malignant-like initial condition
     y_high: np.ndarray = simulate_steady_state(
         f_ras=float(f_ras),
         params=params,
@@ -307,11 +512,59 @@ def plot_C_M_phase_plane(
         n_steps=2000,
     )
 
-    # Unpack steady states for readability
     C_low, A_low, T_low, R_low, L_low, M_low = [float(v) for v in y_low]
     C_high, A_high, T_high, R_high, L_high, M_high = [float(v) for v in y_high]
 
-    # Build a figure with two horizontally aligned panels
+    print(f"\n[INFO] Low-branch steady state at Ras={f_ras:.2f}: "
+          f"C={C_low:.3f}, M={M_low:.3f}")
+    print(f"[INFO] High-branch steady state at Ras={f_ras:.2f}: "
+          f"C={C_high:.3f}, M={M_high:.3f}")
+
+    # --- Jacobians and stability classification ---
+    J_low: np.ndarray = compute_numeric_jacobian(
+        y_ss=y_low,
+        params=params,
+        f_ras=float(f_ras),
+    )
+    eig_low, max_real_low = summarize_jacobian_stability(
+        J=J_low,
+        label="low branch",
+    )
+
+    J_high: np.ndarray = compute_numeric_jacobian(
+        y_ss=y_high,
+        params=params,
+        f_ras=float(f_ras),
+    )
+    eig_high, max_real_high = summarize_jacobian_stability(
+        J=J_high,
+        label="high branch",
+    )
+
+    # Marker colors based on local stability
+    color_low = COLOR_STABLE if max_real_low < 0.0 else COLOR_UNSTABLE
+    color_high = COLOR_STABLE if max_real_high < 0.0 else COLOR_UNSTABLE
+
+    # --- Build trajectories for overlay (same for both panels) ---
+    traj_inits: List[List[float]] = [
+        [0.05, 0.05, 0.05, 0.05, 0.05, 0.05],
+        [0.4, 0.4, 0.3, 0.3, 0.3, 0.4],
+        [0.9, 0.9, 0.6, 0.6, 0.6, 0.9],
+    ]
+    traj_colors: List[str] = [COLOR_TRAJ_1, COLOR_TRAJ_2, COLOR_TRAJ_3]
+
+    traj_CM: List[Tuple[np.ndarray, np.ndarray]] = []
+    for y0 in traj_inits:
+        C_traj, M_traj = integrate_trajectory_euler(
+            y0=y0,
+            params=params,
+            f_ras=float(f_ras),
+            t_max=200.0,
+            dt=0.5,
+        )
+        traj_CM.append((C_traj, M_traj))
+
+    # --- Figure with two C–M slices ---
     fig, axes = plt.subplots(
         1,
         2,
@@ -320,9 +573,7 @@ def plot_C_M_phase_plane(
         sharey=True,
     )
 
-    # Helper to style each panel (so we don't duplicate code)
     def _style_axis(ax: plt.Axes, panel_label: str, title_text: str) -> None:
-        # Add bold panel label in the top-left corner
         ax.text(
             0.02,
             0.98,
@@ -333,7 +584,6 @@ def plot_C_M_phase_plane(
             fontsize=12,
             fontweight="bold",
         )
-        # Set axis labels only once; y-label on left panel only
         ax.set_xlabel("CSC fraction (C)")
         ax.set_xlim(C_range[0], C_range[1])
         ax.set_ylim(M_range[0], M_range[1])
@@ -345,7 +595,6 @@ def plot_C_M_phase_plane(
     # ---------- Panel A: low-CSC branch slice ----------
     ax_left = axes[0]
 
-    # Compute vector field for low-branch slice
     CC_low, MM_low, dC_low, dM_low = compute_vector_field_C_M(
         params=params,
         f_ras=float(f_ras),
@@ -358,16 +607,12 @@ def plot_C_M_phase_plane(
         n_grid=int(n_grid),
     )
 
-    # Compute speed (magnitude of vector) for background and coloring
     speed_low: np.ndarray = np.sqrt(dC_low ** 2 + dM_low ** 2)
-
-    # Normalize vectors for direction field
-    mag_low = speed_low.copy()
+    mag_low: np.ndarray = speed_low.copy()
     mag_low[mag_low == 0.0] = 1.0
-    dC_low_norm = dC_low / mag_low
-    dM_low_norm = dM_low / mag_low
+    dC_low_norm: np.ndarray = dC_low / mag_low
+    dM_low_norm: np.ndarray = dM_low / mag_low
 
-    # Plot speed background as a soft colormap
     im_low = ax_left.pcolormesh(
         CC_low,
         MM_low,
@@ -377,7 +622,6 @@ def plot_C_M_phase_plane(
         alpha=0.6,
     )
 
-    # Overlay streamlines colored by speed
     ax_left.streamplot(
         CC_low,
         MM_low,
@@ -390,7 +634,6 @@ def plot_C_M_phase_plane(
         arrowsize=0.9,
     )
 
-    # Add nullclines: dC/dt = 0 (solid), dM/dt = 0 (dashed)
     ax_left.contour(
         CC_low,
         MM_low,
@@ -409,26 +652,37 @@ def plot_C_M_phase_plane(
         linestyles="--",
     )
 
-    # Mark low-branch steady state
+    # Overlay trajectories (projected into this slice)
+    for (C_traj, M_traj), col in zip(traj_CM, traj_colors):
+        ax_left.plot(
+            C_traj,
+            M_traj,
+            color=col,
+            linewidth=1.1,
+            alpha=0.9,
+        )
+
     ax_left.scatter(
         [C_low],
         [M_low],
-        s=35,
-        color="black",
+        s=40,
+        color=color_low,
         edgecolor="white",
-        linewidth=0.7,
+        linewidth=0.8,
         zorder=5,
+        label="Low-branch SS",
     )
 
-    # Style left panel
     ax_left.set_ylabel("mTOR activity (M)")
-    _style_axis(ax_left, panel_label="A",
-                title_text="Slice near low-CSC branch")
+    _style_axis(
+        ax_left,
+        panel_label="A",
+        title_text="Slice near low-CSC branch",
+    )
 
     # ---------- Panel B: high-CSC branch slice ----------
     ax_right = axes[1]
 
-    # Compute vector field for high-branch slice
     CC_high, MM_high, dC_high, dM_high = compute_vector_field_C_M(
         params=params,
         f_ras=float(f_ras),
@@ -441,16 +695,12 @@ def plot_C_M_phase_plane(
         n_grid=int(n_grid),
     )
 
-    # Compute speed for high-branch slice
     speed_high: np.ndarray = np.sqrt(dC_high ** 2 + dM_high ** 2)
-
-    # Normalize vectors
-    mag_high = speed_high.copy()
+    mag_high: np.ndarray = speed_high.copy()
     mag_high[mag_high == 0.0] = 1.0
-    dC_high_norm = dC_high / mag_high
-    dM_high_norm = dM_high / mag_high
+    dC_high_norm: np.ndarray = dC_high / mag_high
+    dM_high_norm: np.ndarray = dM_high / mag_high
 
-    # Plot background speed field
     ax_right.pcolormesh(
         CC_high,
         MM_high,
@@ -460,7 +710,6 @@ def plot_C_M_phase_plane(
         alpha=0.6,
     )
 
-    # Overlay streamlines
     ax_right.streamplot(
         CC_high,
         MM_high,
@@ -473,7 +722,6 @@ def plot_C_M_phase_plane(
         arrowsize=0.9,
     )
 
-    # Add nullclines: dC/dt = 0 (solid), dM/dt = 0 (dashed)
     ax_right.contour(
         CC_high,
         MM_high,
@@ -492,26 +740,34 @@ def plot_C_M_phase_plane(
         linestyles="--",
     )
 
-    # Mark high-branch steady state
+    for (C_traj, M_traj), col in zip(traj_CM, traj_colors):
+        ax_right.plot(
+            C_traj,
+            M_traj,
+            color=col,
+            linewidth=1.1,
+            alpha=0.9,
+        )
+
     ax_right.scatter(
         [C_high],
         [M_high],
-        s=35,
-        color="black",
+        s=40,
+        color=color_high,
         edgecolor="white",
-        linewidth=0.7,
+        linewidth=0.8,
         zorder=5,
+        label="High-branch SS",
     )
 
-    # Style right panel
-    _style_axis(ax_right, panel_label="B",
-                title_text="Slice near high-CSC branch")
+    _style_axis(
+        ax_right,
+        panel_label="B",
+        title_text="Slice near high-CSC branch",
+    )
 
-    # ---------- Figure-level tweaks ----------
-    # Add a modest suptitle with Ras value
-    fig.suptitle(f"C–M phase plane at Ras = {f_ras:.2f}", fontsize=12)
-
-    # Adjust layout to reduce whitespace and keep panels tight
+    # --- Figure-level tweaks ---
+    fig.suptitle(f"C–M phase plane with trajectories at Ras = {f_ras:.2f}", fontsize=12)
     fig.subplots_adjust(
         left=0.09,
         right=0.98,
@@ -520,7 +776,6 @@ def plot_C_M_phase_plane(
         wspace=0.25,
     )
 
-    # Add a single colorbar for speed on the right side
     cbar = fig.colorbar(
         im_low,
         ax=axes.ravel().tolist(),
@@ -529,13 +784,18 @@ def plot_C_M_phase_plane(
     )
     cbar.set_label("Speed √[(dC/dt)² + (dM/dt)²]", fontsize=9)
 
-    # Save the figure
     out_png: Path = PHASE_PLANE_FIG_DIR / "phase_plane_C_M_CORRECTED.png"
     fig.savefig(out_png, bbox_inches="tight")
     plt.close(fig)
 
     print(f"[SAVED] C–M phase-plane figure to {out_png}")
 
+    # --- Separate Jacobian spectra figure ---
+    plot_jacobian_spectra(
+        eig_low=eig_low,
+        eig_high=eig_high,
+        f_ras=float(f_ras),
+    )
 
 
 # ======================================================================
@@ -549,27 +809,18 @@ def main() -> None:
     This function:
         - Loads calibrated parameters.
         - Generates a two-panel C–M phase plane at a user-specified
-          Ras input (default 0.6).
-        - Writes the resulting figure to figures/phase_plane/.
-
-    In the current course timeline, this sits after:
-        - Calibration (run_model_calibration.py)
-        - Hypothesis tests (run_hypothesis_tests.py)
-        - Sensitivity analyses (run_sensitivity_analyses.py)
+          Ras input (default 0.6), including trajectories and local
+          stability markers.
+        - Generates a separate Jacobian eigenvalue spectrum figure.
     """
-    #   Print a header so logs are easy to read
     print("\n" + "=" * 70)
     print("RUNNING RAS–CSC PHASE-PLANE PLOTS")
     print("=" * 70)
 
-    #   Load the calibrated parameters from JSON
     params: Dict[str, float] = load_parameters()
 
-    #   Choose a Ras value in the bistable region for visualization
-    #   You can change f_ras here if you want a different slice
     f_ras_visual: float = 0.6
 
-    #   Generate and save the C–M phase-plane figure
     plot_C_M_phase_plane(
         params=params,
         f_ras=f_ras_visual,
@@ -578,12 +829,10 @@ def main() -> None:
         n_grid=25,
     )
 
-    #   Print completion footer
     print("\n" + "=" * 70)
     print("PHASE-PLANE PLOTS COMPLETE")
     print("=" * 70)
 
 
-#   Execute main when the script is run directly
 if __name__ == "__main__":
     main()

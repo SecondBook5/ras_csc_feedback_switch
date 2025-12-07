@@ -662,6 +662,29 @@ def main() -> Tuple[Dict[str, float], pd.DataFrame]:
     df_results.to_csv(results_csv, index=False)
     print(f"[SAVED] Model vs data comparison table to {results_csv}")
 
+    # --------------------------------------------------------------
+    # Save a clean residuals table for downstream sensitivity / RSS
+    # --------------------------------------------------------------
+    try:
+        resid_cols = ["dataset", "condition", "module", "residual"]
+        missing_resid_cols = [
+            c for c in resid_cols if c not in df_results.columns]
+        if missing_resid_cols:
+            raise KeyError(
+                f"Residual table missing expected columns: {missing_resid_cols}"
+            )
+
+        resid_df = df_results[resid_cols].copy()
+        resid_path: Path = CALIBRATION_DIR / "model_calibration_residuals_CORRECTED.csv"
+        resid_df.to_csv(resid_path, index=False)
+        print(f"[SAVED] Calibration residuals table to {resid_path}")
+    except Exception as exc:
+        print(
+            "[WARN] Failed to write explicit calibration residuals CSV; "
+            f"sensitivity RSS step may skip. Details: {exc}"
+        )
+
+
     print("\n[SANITY CHECK] Model raw outputs by condition (C and M):")
     for condition in df_results["condition"].unique():
         subset = df_results[

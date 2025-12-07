@@ -13,39 +13,48 @@ This script assumes that:
 
 Analyses performed (numerical + figures):
 
+    0. Calibration RSS summary:
+         - Load per-point residuals from calibration.
+         - Compute global RSS and per-module RSS.
+         - Save:
+               results/sensitivity/calibration_rss_CORRECTED.csv
+         - Plot:
+               figures/sensitivity/calibration_rss_by_module_CORRECTED.png
+         - Print a human-readable summary of which modules are
+           best / worst fit.
+
     1. Hysteresis sensitivity:
          - For a set of key parameters, scale them by factors
            {0.8, 1.0, 1.2} around the calibrated value.
          - For each scaled set, compute the maximum CSC gap between
-           Ras ↑ and Ras ↓ branches (same logic as the main hysteresis test).
-         - Save per-parameter sensitivity to:
+           Ras ↑ and Ras ↓ branches.
+         - Save:
                results/sensitivity/hysteresis_sensitivity_CORRECTED.csv
-         - Plot top-ranked parameters as a multi-panel line figure:
+         - Plot:
                figures/sensitivity/hysteresis_sensitivity_CORRECTED.png
 
     2. Perturbation-effect sensitivity:
          - For the same scaled parameter sets, re-run a high-Ras
            LEPR / mTOR perturbation experiment (mu_L × 0.3, eta_M × 0.3).
-         - Record baseline C/M and ΔC, ΔM under each perturbation.
-         - Save to:
+         - Save:
                results/sensitivity/perturbation_sensitivity_CORRECTED.csv
-         - Plot ΔC_lepr and ΔC_mtor for the most influential parameters:
+         - Plot:
                figures/sensitivity/perturbation_sensitivity_CORRECTED.png
 
     3. LEPR–mTOR perturbation grid:
          - For a grid of (mu_L_scale, eta_M_scale) values, simulate
            high-Ras steady states and record C, M, and ΔC vs baseline.
-         - Save to:
+         - Save:
                results/perturbations/perturbation_grid_CORRECTED.csv
-         - Plot a heatmap of ΔC vs baseline:
+         - Plot:
                figures/sensitivity/perturbation_grid_deltaC_CORRECTED.png
 
     4. Hysteresis robustness to initial conditions:
          - Repeat Ras ↑ / Ras ↓ sweeps for several initial-condition
            pairs (benign- and malignant-like seeds).
-         - Save all trajectories to:
+         - Save:
                results/model/ras_hysteresis_initial_seeds_CORRECTED.csv
-         - Plot CSC hysteresis curves per seed configuration:
+         - Plot:
                figures/model/ras_hysteresis_initial_seeds_CSC_CORRECTED.png
 
     5. Ras-derivative profiles:
@@ -53,9 +62,9 @@ Analyses performed (numerical + figures):
            (following the benign trajectory).
          - Approximate dX/dRas for X ∈ {C, A, T, R, L, M} using centered
            finite differences along the sweep.
-         - Save to:
+         - Save:
                results/model/ras_derivatives_CORRECTED.csv
-         - Plot dX/dRas profiles in a 2×3 panel figure:
+         - Plot:
                figures/model/ras_derivatives_CORRECTED.png
 """
 
@@ -102,10 +111,8 @@ except ImportError as exc:  # pragma: no cover - defensive
 # GLOBAL STYLE (FIGURES)
 # ======================================================================
 
-# Set seaborn style
 sns.set_style("whitegrid")
 
-# Configure matplotlib rcParams for journal-quality figures
 plt.rcParams.update(
     {
         "figure.dpi": 300,
@@ -125,7 +132,6 @@ plt.rcParams.update(
     }
 )
 
-# Color palette (aligned with hypothesis tests)
 COLOR_BASELINE = "#0072B2"
 COLOR_LEPR = "#D55E00"
 COLOR_MTOR = "#009E73"
@@ -143,7 +149,6 @@ SENSITIVITY_DIR: Path = RESULTS_DIR / "sensitivity"
 PERTURBATION_DIR: Path = RESULTS_DIR / "perturbations"
 MODEL_RESULTS_DIR: Path = RESULTS_DIR / "model"
 
-# Figure directories
 FIG_ROOT: Path = ROOT / "figures"
 FIG_SENSITIVITY_DIR: Path = FIG_ROOT / "sensitivity"
 FIG_MODEL_DIR: Path = FIG_ROOT / "model"
@@ -203,6 +208,367 @@ def load_parameters() -> Dict[str, float]:
 
     print(f"[INFO] Loaded {len(clean_params)} parameters from {PARAM_JSON}")
     return clean_params
+
+
+# ======================================================================
+# ANALYSIS 0: CALIBRATION RSS SUMMARY (RESIDUALS PER MODULE)
+# ======================================================================
+
+def _find_calibration_residuals_file() -> Path:
+    """
+    Try to locate a calibration residuals CSV in the calibration directory.
+
+    This is intentionally defensive: it tries a few reasonable filenames
+    and raises a clear error if none are found.
+    """
+    candidate_names = [
+        # Preferred: explicit residuals CSV written by run_model_calibration.py
+        "model_calibration_residuals_CORRECTED.csv",
+        "model_calibration_residuals.csv",
+        # Fallbacks: full model-vs-data tables that contain a 'residual' column
+        "model_vs_data_CORRECTED.csv",
+        "model_vs_data.csv",
+        # Older names if you ever use them
+        "model_calibration_fits_CORRECTED.csv",
+        "model_calibration_fits.csv",
+    ]
+
+    for name in candidate_names:
+        candidate = CALIBRATION_DIR / name
+        if candidate.exists():
+            return candidate
+
+    raise FileNotFoundError(
+        "Could not find a calibration residuals CSV in "
+        f"{CALIBRATION_DIR}. Expected one of: "
+        + ", ".join(candidate_names)
+        + ".\nPlease ensure that run_model_calibration.py writes a "
+        "per-point residual table and update the filename here if needed."
+    )
+
+
+def load_calibration_residuals() -> pd.DataFrame:
+    """
+    Load per-point calibration residuals from CSV.
+
+    The file is expected to contain at least:
+        - a column with residuals (named 'residual' or 'resid').
+        - optionally a 'module' or 'variable' column to group by.
+
+    Returns
+    -------
+    pd.DataFrame
+        Residual table with standardized column names:
+            'module' (if available) and 'residual'.
+    """
+    resid_path = _find_calibration_residuals_file()
+    print(f"[INFO] Using calibration residuals file: {resid_path}")
+
+    df = pd.read_csv(resid_path)
+
+    # Normalise residual column name
+    if "residual" in df.columns:
+        resid_col = "residual"
+    elif "resid" in df.columns:
+        resid_col = "resid"
+    else:
+        raise ValueError(
+            f"Calibration residuals file {resid_path} does not contain a "
+            "'residual' or 'resid' column."
+        )
+    df = df.rename(columns={resid_col: "residual"})
+
+    # Normalise module/variable name if present
+    if "module" in df.columns:
+        df = df.rename(columns={"module": "module"})
+    elif "variable" in df.columns:
+        df = df.rename(columns={"variable": "module"})
+    else:
+        df["module"] = "ALL"
+
+    # Drop any non-finite residuals
+    df = df[np.isfinite(df["residual"].to_numpy())].copy()
+    if df.empty:
+        raise ValueError("Calibration residuals table is empty after filtering.")
+
+    return df
+
+
+def run_calibration_rss_analysis() -> pd.DataFrame:
+    """
+    Compute RSS per module and globally from calibration residuals.
+
+    Outputs
+    -------
+    - results/sensitivity/calibration_rss_CORRECTED.csv
+    - figures/sensitivity/calibration_rss_by_module_CORRECTED.png
+    - figures/sensitivity/calibration_residuals_distribution_CORRECTED.png
+    - Printed textual summary of fit quality per module.
+
+    Returns
+    -------
+    pd.DataFrame
+        Table with columns:
+            module, rss, n_points, mse
+    """
+    # Load per-point residuals (module + residual columns)
+    df_resid = load_calibration_residuals()
+
+    # Group residuals by module
+    group = df_resid.groupby("module", as_index=False)
+
+    # Compute RSS for each module
+    rss_df = group["residual"].apply(
+        lambda s: float(np.sum(np.square(s.to_numpy(dtype=float))))
+    ).rename(columns={"residual": "rss"})
+
+    # Number of points per module
+    size_df = group.size()
+    rss_df["n_points"] = size_df["size"].astype(int)
+
+    # MSE per module
+    rss_df["mse"] = rss_df["rss"] / rss_df["n_points"].replace(0, np.nan)
+
+    # Global metrics
+    global_rss = float(
+        np.sum(np.square(df_resid["residual"].to_numpy(dtype=float))))
+    global_n = int(df_resid.shape[0])
+    global_mse = global_rss / global_n if global_n > 0 else float("nan")
+
+    global_row = pd.DataFrame(
+        [
+            {
+                "module": "GLOBAL",
+                "rss": global_rss,
+                "n_points": global_n,
+                "mse": global_mse,
+            }
+        ]
+    )
+
+    out_df = pd.concat([rss_df, global_row], ignore_index=True)
+
+    # Save RSS summary
+    out_csv = SENSITIVITY_DIR / "calibration_rss_CORRECTED.csv"
+    out_df.to_csv(out_csv, index=False)
+    print(f"[SAVED] Calibration RSS summary to {out_csv}")
+
+    # ------------------------------------------------------------------
+    # Figure 1: RSS per module (fancier barplot with annotations)
+    # ------------------------------------------------------------------
+    plot_df = rss_df.sort_values("rss", ascending=False).reset_index(drop=True)
+
+    fig, ax = plt.subplots(figsize=(4.8, 3.2), constrained_layout=False)
+
+    # Use a gradient palette so higher RSS visually stands out
+    palette = sns.color_palette("Blues", n_colors=plot_df.shape[0])
+
+    sns.barplot(
+        data=plot_df,
+        x="module",
+        y="rss",
+        palette=palette,
+        ax=ax,
+        edgecolor="black",
+    )
+
+    ax.set_ylabel("RSS (sum of squared residuals)")
+    ax.set_xlabel("Module")
+    ax.set_title("Calibration fit per module (RSS)")
+    ax.tick_params(axis="x", rotation=45)
+    ax.grid(axis="y", alpha=0.3)
+
+    # Annotate bars with RSS values (compact, scientific if needed)
+    for patch, (_, row) in zip(ax.patches, plot_df.iterrows()):
+        height = patch.get_height()
+        if height <= 0 or not np.isfinite(height):
+            continue
+        label = f"{height:.2g}" if height > 100 else f"{height:.2f}"
+        ax.annotate(
+            label,
+            xy=(patch.get_x() + patch.get_width() / 2.0, height),
+            xytext=(0, 2),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            fontsize=7,
+            rotation=90,
+        )
+
+    fig.subplots_adjust(left=0.18, right=0.98, top=0.88, bottom=0.30)
+    out_png_rss = FIG_SENSITIVITY_DIR / "calibration_rss_by_module_CORRECTED.png"
+    fig.savefig(out_png_rss)
+    plt.close(fig)
+    print(f"[SAVED] Calibration RSS figure to {out_png_rss}")
+
+    # ------------------------------------------------------------------
+    # Figure 2: Fancier residual plots
+    #   Left: global distribution (hist + KDE + mean ± SD lines)
+    #   Right: violin + box overlay per module + jittered points
+    # ------------------------------------------------------------------
+    fig2, axes = plt.subplots(
+        1,
+        2,
+        figsize=(8.0, 3.4),
+        constrained_layout=False,
+        sharey=False,
+    )
+
+    # Global statistics
+    resid_vals = df_resid["residual"].to_numpy(dtype=float)
+    resid_mean = float(np.mean(resid_vals))
+    resid_std = float(np.std(resid_vals))
+
+    # Left: histogram + KDE + mean / ±1 SD markers
+    sns.histplot(
+        df_resid["residual"],
+        bins=15,
+        kde=True,
+        ax=axes[0],
+        stat="count",
+        edgecolor="black",
+        linewidth=0.5,
+    )
+    axes[0].axvline(0.0, color="grey", linestyle="--",
+                    linewidth=0.8, label="0")
+    axes[0].axvline(
+        resid_mean,
+        color="black",
+        linestyle="-",
+        linewidth=1.0,
+        label="mean",
+    )
+    axes[0].axvline(
+        resid_mean + resid_std,
+        color="black",
+        linestyle=":",
+        linewidth=0.9,
+        label="mean ± SD",
+    )
+    axes[0].axvline(
+        resid_mean - resid_std,
+        color="black",
+        linestyle=":",
+        linewidth=0.9,
+    )
+
+    axes[0].set_xlabel("Residual (model − data, z-score)")
+    axes[0].set_ylabel("Count")
+    axes[0].set_title("Global residual distribution")
+    axes[0].grid(alpha=0.3)
+
+    # Compact text box with summary stats
+    text_str = f"mean = {resid_mean:.3f}\nSD   = {resid_std:.3f}\nN    = {len(resid_vals)}"
+    axes[0].text(
+        0.97,
+        0.97,
+        text_str,
+        transform=axes[0].transAxes,
+        ha="right",
+        va="top",
+        fontsize=7,
+        bbox=dict(boxstyle="round,pad=0.2", facecolor="white", alpha=0.8),
+    )
+
+    axes[0].legend(frameon=False, fontsize=7)
+
+    # Right: violin + boxplot overlay + jitter
+    # Sort modules by median residual absolute value so ordering is informative
+    median_abs = (
+        df_resid.groupby("module")["residual"]
+        .apply(lambda s: float(np.median(np.abs(s.to_numpy(dtype=float)))))
+        .sort_values(ascending=False)
+    )
+    ordered_modules = median_abs.index.tolist()
+    df_resid["module"] = pd.Categorical(
+        df_resid["module"], categories=ordered_modules, ordered=True
+    )
+
+    # Violin for shape
+    sns.violinplot(
+        data=df_resid,
+        x="module",
+        y="residual",
+        inner=None,
+        cut=0,
+        scale="width",
+        linewidth=0.7,
+        ax=axes[1],
+        palette="pastel",
+    )
+
+    # Narrow boxplot overlaid for median / IQR
+    sns.boxplot(
+        data=df_resid,
+        x="module",
+        y="residual",
+        whis=1.5,
+        width=0.3,
+        fliersize=0,
+        boxprops={"facecolor": "white", "zorder": 3},
+        medianprops={"color": "black", "linewidth": 1.2},
+        whiskerprops={"linewidth": 0.8},
+        capprops={"linewidth": 0.8},
+        ax=axes[1],
+    )
+
+    # Jittered points (low alpha so it does not clutter)
+    sns.stripplot(
+        data=df_resid,
+        x="module",
+        y="residual",
+        color="black",
+        size=2.5,
+        alpha=0.4,
+        jitter=0.2,
+        ax=axes[1],
+        zorder=4,
+    )
+
+    axes[1].axhline(0.0, color="grey", linestyle="--", linewidth=0.8)
+    axes[1].set_xlabel("Module")
+    axes[1].set_ylabel("Residual (model − data, z-score)")
+    axes[1].set_title("Residuals by module")
+    axes[1].tick_params(axis="x", rotation=45)
+    axes[1].grid(alpha=0.3, axis="y")
+
+    fig2.subplots_adjust(
+        left=0.08,
+        right=0.99,
+        top=0.88,
+        bottom=0.24,
+        wspace=0.35,
+    )
+    out_png_resid = (
+        FIG_SENSITIVITY_DIR / "calibration_residuals_distribution_CORRECTED.png"
+    )
+    fig2.savefig(out_png_resid)
+    plt.close(fig2)
+    print(f"[SAVED] Calibration residuals figure to {out_png_resid}")
+
+    # ------------------------------------------------------------------
+    # Textual summary
+    # ------------------------------------------------------------------
+    print("\n" + "=" * 70)
+    print("CALIBRATION RSS SUMMARY")
+    print("=" * 70)
+    print(
+        f"Global RSS: {global_rss:.3f} over {global_n} data points "
+        f"(MSE = {global_mse:.4f})"
+    )
+    print("\nPer-module RSS (sorted, highest to lowest):")
+    for _, row in plot_df.iterrows():
+        module = str(row["module"])
+        rss_val = float(row["rss"])
+        n_val = int(row["n_points"])
+        mse_val = float(row["mse"])
+        print(
+            f"  {module:15s}  RSS = {rss_val:8.3f}  "
+            f"n = {n_val:5d}  MSE = {mse_val:7.4f}"
+        )
+    print("=" * 70 + "\n")
+
+    return out_df
 
 
 # ======================================================================
@@ -1091,6 +1457,7 @@ def main() -> None:
 
     Orchestrates:
         - Parameter loading.
+        - Calibration RSS summary + figure.
         - Hysteresis sensitivity + figure.
         - Perturbation-effect sensitivity + figure.
         - LEPR–mTOR perturbation grid + heatmap.
@@ -1102,6 +1469,16 @@ def main() -> None:
     print("=" * 70)
 
     params: Dict[str, float] = load_parameters()
+
+    print("\n[STEP] Calibration RSS summary...")
+    try:
+        run_calibration_rss_analysis()
+    except Exception as exc:
+        print(
+            "[WARN] Calibration RSS summary failed; "
+            "continuing with other analyses. "
+            f"Details: {exc}"
+        )
 
     print("\n[STEP] Hysteresis sensitivity...")
     df_hyst = run_hysteresis_sensitivity(params=params)
