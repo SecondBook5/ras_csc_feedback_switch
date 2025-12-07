@@ -1,0 +1,55 @@
+{
+  "n_cells_total": 1504,
+  "n_CSC": 539,
+  "CSC_fraction": 0.3584,
+  "CSC_fraction_yuan": 0.358,
+  "CSC_definition_method": "Yuan 101-gene signature, top 36% threshold",
+  "mechanistic_correlations": [
+    {
+      "arrow": "T→R",
+      "mechanism": "TGFβ → Lepr",
+      "correlation": -0.1669,
+      "p_value": 7.438e-11,
+      "significant": true,
+      "strong": false,
+      "hypothesis_supported": false
+    },
+    {
+      "arrow": "M→C",
+      "mechanism": "mTOR → CSC",
+      "correlation": 0.8483,
+      "p_value": 0,
+      "significant": true,
+      "strong": true,
+      "hypothesis_supported": true
+    },
+    {
+      "arrow": "M→CSig",
+      "mechanism": "mTOR → Yuan_CSig",
+      "correlation": 0.8617,
+      "p_value": 0,
+      "significant": true,
+      "strong": true,
+      "hypothesis_supported": true
+    },
+    {
+      "arrow": "A→T",
+      "mechanism": "Angio → TGFβ",
+      "correlation": 0.4202,
+      "p_value": 2.1667e-65,
+      "significant": true,
+      "strong": true,
+      "hypothesis_supported": true
+    },
+    {
+      "arrow": "R→M",
+      "mechanism": "Lepr → mTOR",
+      "correlation": -0.1073,
+      "p_value": 0,
+      "significant": true,
+      "strong": false,
+      "hypothesis_supported": false
+    }
+  ],
+  "batch_mixing_score": 0.7794
+}

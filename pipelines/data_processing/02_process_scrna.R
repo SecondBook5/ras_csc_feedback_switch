@@ -37,7 +37,7 @@ message("========================================\n")
 # Paths
 RAW_DIR <- "data/raw/GSE207975"
 INTERIM_DIR <- "data/interim/omics_qc"
-PROCESSED_DIR <- "data/processed/omics_summaries"
+PROCESSED_DIR <- "data/processed/scrna"
 FIG_DIR <- "figures/main"
 GENESET_YAML <- "config/gene_sets_rnaseq.yaml"
 
