@@ -1,0 +1,8 @@
+{
+  "has_sklearn": true,
+  "n_cells": 1504,
+  "bic_1": -3206.1022486592387,
+  "bic_2": -3776.7907582769503,
+  "delta_bic": 570.6885096177116,
+  "evidence_for_bimodality": true
+}
