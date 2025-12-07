@@ -4,10 +4,10 @@ By AJ Book and Shrinithi Natarajan
 
 This repository implements a compact Ras–CSC–microenvironment model calibrated to the cutaneous SCC system of:
 
-> Yuan, S., Stewart, K.S., Yang, Y. et al. **Ras drives malignancy through stem cell crosstalk with the microenvironment.**  
-> *Nature* 612, 555–563 (2022). https://doi.org/10.1038/s41586-022-05475-6
+> Yuan, S., Stewart, K.S., Yang, Y. et al. **Ras drives malignancy through stem cell crosstalk with the microenvironment.**
+> *Nature* 612, 555–563 (2022). [https://doi.org/10.1038/s41586-022-05475-6](https://doi.org/10.1038/s41586-022-05475-6)
 
-The central hypothesis is that a Ras-driven positive feedback loop between CSCs and their microenvironment produces a **bistable malignant switch**.  
+The central hypothesis is that a Ras-driven positive feedback loop between CSCs and their microenvironment produces a **bistable malignant switch**.
 The model predicts that perturbing angiogenesis or the LEPR–mTOR axis can collapse the high-CSC state even if Ras remains high.
 
 ---
@@ -16,12 +16,12 @@ The model predicts that perturbing angiogenesis or the LEPR–mTOR axis can coll
 
 The dynamical system tracks:
 
-- **C** – CSC fraction  
-- **A** – Angiogenesis  
-- **T** – TGFβ signaling  
-- **R** – LEPR  
-- **L** – Leptin  
-- **M** – mTOR  
+* **C** – CSC fraction
+* **A** – Angiogenesis
+* **T** – TGFβ signaling
+* **R** – LEPR
+* **L** – Leptin
+* **M** – mTOR
 
 with the feedforward chain:
 
@@ -33,22 +33,28 @@ The ODEs and Hill activations live in `src/ras_csc_core.py`, and every analysis 
 
 ## Software requirements
 
-You need both R and Python:
+You need both R and Python.
 
-- **R** ≥ 4.x with CRAN + Bioconductor packages installed via:
+**R**
 
-  ```bash
-  Rscript R/install_packages.R
-````
+* R ≥ 4.x
+* Install required CRAN/Bioconductor packages:
 
-* **Python** ≥ 3.10 with the packages listed in `requirements.txt`:
+```bash
+Rscript R/install_packages.R
+```
 
-  ```bash
-  python -m venv .venv_ras-csc-switch-mm
-  source .venv_ras-csc-switch-mm/bin/activate
+**Python**
 
-  pip install -r requirements.txt
-  ```
+* Python ≥ 3.10
+* Create and activate a virtual environment, then install dependencies:
+
+```bash
+python -m venv .venv_ras-csc-switch-mm
+source .venv_ras-csc-switch-mm/bin/activate
+
+pip install -r requirements.txt
+```
 
 `requirements.txt` includes:
 
@@ -159,10 +165,7 @@ README.md
 After installing R and Python dependencies:
 
 ```bash
-# Activate the Python environment
 source .venv_ras-csc-switch-mm/bin/activate
-
-# Run the full pipeline
 ./run_ras_csc_feedforward_hypothesis.sh
 ```
 
@@ -211,31 +214,32 @@ Key outputs:
 * `results/predictions/prediction_bimodality_summary_CORRECTED.json`
 * `results/temporal/*.csv`
 
-Figures used in the manuscript/live write-up are under `figures/main/`.
+Figures used in the manuscript write-up are under `figures/main/`.
 
 ---
 
 ## Key files to understand first
 
-1. `docs/hypothesis.md` and `docs/equations.md` – verbal and mathematical statement of the model.
-2. `src/ras_csc_core.py` – the actual ODE model and steady-state solvers.
-3. `config/model_params.yaml` – priors, bounds, Ras mapping, and parameter configuration.
-4. `results/calibration/optimized_parameters_CORRECTED.json` – fitted parameter set.
-5. `figures/main/ras_hysteresis_CORRECTED.png` – bistability and Ras hysteresis.
-6. `figures/main/lepr_mtor_perturbations_CORRECTED.png` – LEPR/mTOR/angiogenesis perturbation outcomes.
+1. `docs/hypothesis.md` and `docs/equations.md` – verbal and mathematical statement of the model
+2. `src/ras_csc_core.py` – ODE system and steady-state solvers
+3. `config/model_params.yaml` – priors, bounds, Ras mapping, and parameter configuration
+4. `results/calibration/optimized_parameters_CORRECTED.json` – fitted parameter set
+5. `figures/main/ras_hysteresis_CORRECTED.png` – bistability and Ras hysteresis
+6. `figures/main/lepr_mtor_perturbations_CORRECTED.png` – LEPR/mTOR/angiogenesis perturbation outcomes
 
 ---
 
 ## Data sources
 
-All datasets are public and come directly from the Yuan et al. system:
+All datasets are public and come from the Yuan et al. system:
 
-* **GSE190411** – bulk RNA-seq (Bl6 Normal, Papilloma, SCC, PDV, LEPR KO).
-* **GSE207975** – SCC scRNA-seq.
-* **GSE190414** – HFSC/IFE/PAP/SCC ATAC-seq.
-* **MOESM Excel files** – supplementary tables from the Yuan et al. paper.
+* **GSE190411** – bulk RNA-seq (Bl6 Normal, Papilloma, SCC, PDV, LEPR KO)
+* **GSE207975** – SCC scRNA-seq
+* **GSE190414** – HFSC/IFE/PAP/SCC ATAC-seq
+* **MOESM Excel files** – supplementary tables from the Yuan et al. paper
 
-Raw files are stored under `data/raw/` exactly as downloaded; all intermediate and processed derivatives live under `data/interim/` and `data/processed/`.
+Raw files are stored under `data/raw/` exactly as downloaded.
+Intermediate and processed derivatives live under `data/interim/` and `data/processed/`.
 
 ---
 
@@ -243,10 +247,10 @@ Raw files are stored under `data/raw/` exactly as downloaded; all intermediate a
 
 If this model or workflow is used in your work, please cite:
 
-**Biological system + data:**
+**Biological system + data**
 Yuan et al., *Nature* 2022.
 
-**Model + pipeline implementation:**
+**Model + pipeline implementation**
 This repository: *Ras–CSC Feedback Switch Model*.
 
 
