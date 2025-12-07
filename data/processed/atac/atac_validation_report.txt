@@ -1,0 +1,136 @@
+==============================================
+ATAC-SEQ VALIDATION REPORT
+Generated: 2025-12-06 23:23:02.561964
+==============================================
+
+ATAC-seq samples:
+  Total samples: 6
+
+Conditions:
+  HFSC (Normal): 1 sample(s)
+  IFE (Normal): 1 sample(s)
+  Papilloma_mneg (Papilloma): 1 sample(s)
+  Papilloma_mpos (Papilloma): 1 sample(s)
+  SCC_mneg (SCC): 1 sample(s)
+  SCC_mpos (SCC): 1 sample(s)
+
+Peak annotation statistics:
+  HFSC_ATAC: 15314 genes, 55100 peaks (3.6 peaks/gene)
+  IFE_ATAC: 15810 genes, 47759 peaks (3.0 peaks/gene)
+  PAP_mneg_ATAC: 18134 genes, 74889 peaks (4.1 peaks/gene)
+  PAP_mpos_ATAC: 18787 genes, 89831 peaks (4.8 peaks/gene)
+  SCC_mneg_ATAC: 18997 genes, 97033 peaks (5.1 peaks/gene)
+  SCC_mpos_ATAC: 18974 genes, 99173 peaks (5.2 peaks/gene)
+
+Module gene sets:
+  TGFb_bulk: 35 genes
+  mTOR_bulk: 59 genes
+  Angio_bulk: 32 genes
+  CSC_bulk: 48 genes
+  TGFb_bulk: 33/35 genes present (94.3%)
+  mTOR_bulk: 59/59 genes present (100.0%)
+  Angio_bulk: 32/32 genes present (100.0%)
+  CSC_bulk: 45/48 genes present (93.8%)
+
+==============================================
+STATISTICAL TESTS: ATAC Module Scores
+==============================================
+
+TGFb_bulk (m+ vs m-):
+  m+ mean: -0.302
+  m- mean: 0.032
+  t-test: p=0.486, d=-0.93 ✗ NS
+
+mTOR_bulk (m+ vs m-):
+  m+ mean: -0.294
+  m- mean: 0.120
+  t-test: p=0.320, d=-1.18 ✗ NS
+
+Angio_bulk (m+ vs m-):
+  m+ mean: -0.148
+  m- mean: 0.139
+  t-test: p=0.458, d=-1.02 ✗ NS
+
+CSC_bulk (m+ vs m-):
+  m+ mean: -0.332
+  m- mean: 0.118
+  t-test: p=0.384, d=-1.18 ✗ NS
+
+Progression trends (mean scores):
+  TGFb_bulk: Normal=0.27 → Pap=-0.39 → SCC=0.12 (FC=0.43)
+  mTOR_bulk: Normal=0.17 → Pap=-0.31 → SCC=0.13 (FC=0.77)
+  Angio_bulk: Normal=0.01 → Pap=-0.18 → SCC=0.17 (FC=17.01)
+  CSC_bulk: Normal=0.21 → Pap=-0.32 → SCC=0.11 (FC=0.49)
+
+==============================================
+CROSS-OMICS CONCORDANCE (RNA vs ATAC)
+==============================================
+
+TGFb_bulk:
+  Spearman r = 0.500, p = 1.000 ⚠ WEAK
+    Normal: RNA=-0.19, ATAC=0.27
+    Papilloma: RNA=-0.35, ATAC=-0.39
+    SCC: RNA=0.22, ATAC=0.12
+
+mTOR_bulk:
+  Spearman r = -0.500, p = 1.000 ⚠ WEAK
+    Normal: RNA=-0.70, ATAC=0.17
+    Papilloma: RNA=-0.36, ATAC=-0.31
+    SCC: RNA=0.36, ATAC=0.13
+
+Angio_bulk:
+  Spearman r = 0.500, p = 1.000 ⚠ WEAK
+    Normal: RNA=-0.82, ATAC=0.01
+    Papilloma: RNA=-0.40, ATAC=-0.18
+    SCC: RNA=0.40, ATAC=0.17
+
+CSC_bulk:
+  Spearman r = -0.500, p = 1.000 ⚠ WEAK
+    Normal: RNA=-0.86, ATAC=0.21
+    Papilloma: RNA=-0.42, ATAC=-0.32
+    SCC: RNA=0.42, ATAC=0.11
+
+
+==============================================
+MECHANISTIC HYPOTHESIS TESTING
+==============================================
+
+H1: TGFβ → CSC pathway
+  Correlation: r = 0.771, p = 0.103 ✗ NOT SUPPORTED
+
+H2: mTOR → CSC pathway
+  Correlation: r = 0.943, p = 0.017 ✓ SUPPORTED
+
+H3: Angio → TGFβ pathway
+  Correlation: r = 0.657, p = 0.175 ✗ NOT SUPPORTED
+
+==============================================
+CALIBRATION TARGETS (ATAC)
+==============================================
+
+HFSC (Normal):
+  C=-0.276, A=-0.462, T=-0.063, M=-0.304
+IFE (Normal):
+  C=0.705, A=0.480, T=0.601, M=0.652
+Papilloma_mneg (Papilloma):
+  C=-0.206, A=-0.121, T=-0.294, M=-0.117
+Papilloma_mpos (Papilloma):
+  C=-0.436, A=-0.246, T=-0.478, M=-0.499
+SCC_mneg (SCC):
+  C=0.442, A=0.399, T=0.359, M=0.356
+SCC_mpos (SCC):
+  C=-0.229, A=-0.050, T=-0.125, M=-0.088
+
+==============================================
+SUMMARY STATISTICS
+==============================================
+
+Total samples processed: 6
+Total genes with accessibility: 20966
+Modules computed: 4
+
+Gene coverage per module:
+  TGFb_bulk: 33/35 genes (94.3%)
+  mTOR_bulk: 59/59 genes (100.0%)
+  Angio_bulk: 32/32 genes (100.0%)
+  CSC_bulk: 45/48 genes (93.8%)

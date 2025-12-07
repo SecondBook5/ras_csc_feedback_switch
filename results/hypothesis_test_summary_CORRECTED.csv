@@ -1,0 +1,4 @@
+Test,H1_prediction,Result,Metric
+Bistability (Ras hysteresis),Hysteresis loop exists,PASS,Max gap = 0.536
+LEPR perturbation,Collapses high-C state,PASS,ΔC = 0.522
+mTOR perturbation,Collapses high-C state,PASS,ΔC = 0.495

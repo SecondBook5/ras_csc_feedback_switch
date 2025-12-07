@@ -1,0 +1,90 @@
+==============================================
+BULK RNA-SEQ VALIDATION REPORT
+Generated: 2025-12-06 23:18:36.450604
+==============================================
+
+Expression matrices built:
+  Bl6: 46494 genes x 6 samples
+  PAP_SCC: 51906 genes x 8 samples
+  PDV: 49533 genes x 8 samples
+
+Sample metadata (condition counts):
+  Normal: 2 samples
+  Papilloma: 4 samples
+  PDV_LeprKO: 4 samples
+  PDV_WT: 4 samples
+  SCC: 8 samples
+
+Dataset x condition table:
+         
+          Normal Papilloma PDV_LeprKO PDV_WT SCC
+  Bl6          2         0          0      0   4
+  PAP_SCC      0         4          0      0   4
+  PDV          0         0          4      4   0
+
+Module gene sets:
+  TGFb_bulk: 35 genes
+  mTOR_bulk: 59 genes
+  Angio_bulk: 32 genes
+  CSC_bulk: 48 genes
+
+==============================================
+STATISTICAL TESTS: Module ~ Condition
+==============================================
+
+TGFb_bulk:
+  ANOVA: F=1.86, p=1.64e-01, η²=0.305 ✗ NS
+  Normal→Papilloma: p=5.76e-01, d=-0.46
+  Papilloma→SCC: p=6.54e-02, d=1.15
+  PDV_WT→LeprKO: p=2.49e-01, d=-0.91 ✓ LARGE EFFECT
+
+mTOR_bulk:
+  ANOVA: F=2.50, p=8.16e-02, η²=0.370 ✗ NS
+  Normal→Papilloma: p=3.39e-01, d=0.72
+  Papilloma→SCC: p=8.39e-02, d=1.07
+  PDV_WT→LeprKO: p=2.53e-01, d=-0.91 ✓ LARGE EFFECT
+
+Angio_bulk:
+  ANOVA: F=4.48, p=1.18e-02, η²=0.513 ✓ SIGNIFICANT
+  Normal→Papilloma: p=2.40e-01, d=0.85
+  Papilloma→SCC: p=6.09e-02, d=1.26
+  PDV_WT→LeprKO: p=1.06e-01, d=-1.22 ✓ LARGE EFFECT
+
+CSC_bulk:
+  ANOVA: F=4.08, p=1.69e-02, η²=0.490 ✓ SIGNIFICANT
+  Normal→Papilloma: p=1.68e-01, d=1.00
+  Papilloma→SCC: p=3.51e-02, d=1.19
+  PDV_WT→LeprKO: p=8.84e-02, d=-1.24 ✓ LARGE EFFECT
+
+==============================================
+CROSS-DATASET CONSISTENCY
+==============================================
+
+SCC samples across datasets (Bl6 vs PAP_SCC):
+  Spearman correlation: r=1.000, p=0.083 ⚠ WEAK
+    Angio_bulk: Bl6=0.41, PAP=0.40, diff=0.01
+    CSC_bulk: Bl6=0.43, PAP=0.42, diff=0.01
+    TGFb_bulk: Bl6=0.10, PAP=0.35, diff=0.25
+    mTOR_bulk: Bl6=0.35, PAP=0.36, diff=0.01
+
+PCA Analysis:
+  PC1 variance: 90.5%
+  PC2 variance: 8.3%
+  PC1 ~ dataset: p=1.000 ✓ NO BATCH EFFECT
+
+==============================================
+CALIBRATION TARGETS EXPORTED
+==============================================
+
+Bl6 - Normal:
+  C=-0.861, A=-0.816, T=-0.193, M=-0.705
+Bl6 - SCC:
+  C=0.431, A=0.408, T=0.096, M=0.352
+PAP_SCC - Papilloma:
+  C=-0.416, A=-0.396, T=-0.349, M=-0.360
+PAP_SCC - SCC:
+  C=0.416, A=0.396, T=0.349, M=0.360
+PDV - PDV_LeprKO:
+  C=-0.304, A=-0.355, T=-0.207, M=-0.235
+PDV - PDV_WT:
+  C=0.304, A=0.355, T=0.207, M=0.235
