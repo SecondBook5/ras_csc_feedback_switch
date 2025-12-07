@@ -1,7 +1,7 @@
 ==============================================
 scRNA-SEQ VALIDATION REPORT
 CSC Definition: Yuan 101-gene signature
-Generated: 2025-12-06 23:20:41.277045
+Generated: 2025-12-07 05:15:17.139905
 ==============================================
 
 Raw data: 55430 x 2304
@@ -73,7 +73,7 @@ Lepr validation:
       ✓ ENSMUSG00000025278.9: FC=1.41, p=1.52e-107
       ✓ ENSMUSG00000031328.15: FC=1.22, p=8.25e-104
 
-Pseudotime: root=3, range [0.0, 277.2]
+Pseudotime: root=3, raw [0.00, 277.18] (normalized to [0, 1])
 
 Module coherence:
   TGFb: r = 0.080 ✗ POOR

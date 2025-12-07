@@ -505,19 +505,23 @@ if (length(pathway_ids) > 0) {
 # --- PSEUDOTIME ---
 message("\n  Computing pseudotime...")
 
+# Compute mean Lepr per cluster to pick a low-Lepr root cluster
 cluster_lepr_means <- tapply(
-  X = scc_obj$Lepr_expr,
+  X     = scc_obj$Lepr_expr,
   INDEX = scc_obj$seurat_clusters,
-  FUN = mean,
+  FUN   = mean,
   na.rm = TRUE
 )
 
+# Choose root cluster as the lowest-Lepr cluster (more benign-like)
 root_cluster <- names(cluster_lepr_means)[which.min(cluster_lepr_means)]
 
+# Convert Seurat object to SingleCellExperiment with PCA embedding
 sce <- as.SingleCellExperiment(scc_obj)
 reducedDims(sce)$PCA <- Embeddings(scc_obj, "pca")
 sce$seurat_clusters <- factor(sce$seurat_clusters)
 
+# Run Slingshot using Louvain clusters and PCA as input
 sce <- slingshot(
   sce,
   clusterLabels = "seurat_clusters",
@@ -525,15 +529,26 @@ sce <- slingshot(
   start.clus    = root_cluster
 )
 
+# Extract pseudotime (first lineage if multiple)
 pt_mat <- slingPseudotime(sce)
 pt_vec <- if (is.matrix(pt_mat)) pt_mat[, 1] else pt_mat
 
+# Store raw pseudotime back into Seurat metadata
 scc_obj$pseudotime <- as.numeric(pt_vec[colnames(scc_obj)])
 
+# Normalize pseudotime to [0, 1] for alignment with ODE model time
+pt_min <- min(scc_obj$pseudotime, na.rm = TRUE)
+pt_max <- max(scc_obj$pseudotime, na.rm = TRUE)
+
+if (is.finite(pt_min) && is.finite(pt_max) && pt_max > pt_min) {
+  scc_obj$pseudotime_norm <- (scc_obj$pseudotime - pt_min) / (pt_max - pt_min)
+} else {
+  scc_obj$pseudotime_norm <- NA_real_
+}
+
 write_validation(sprintf(
-  "\nPseudotime: root=%s, range [%.1f, %.1f]",
-  root_cluster, min(scc_obj$pseudotime, na.rm = TRUE),
-  max(scc_obj$pseudotime, na.rm = TRUE)
+  "\nPseudotime: root=%s, raw [%.2f, %.2f] (normalized to [0, 1])",
+  root_cluster, pt_min, pt_max
 ))
 
 # =============================================================================
@@ -729,10 +744,15 @@ write_csv(scores_df, file.path(PROCESSED_DIR, "scc_scRNA_module_scores_per_cell.
 meta_export <- meta_df %>%
   dplyr::select(
     cell_id, sample_id, seurat_clusters, louvain_cluster, is_CSC,
-    UMAP_1, UMAP_2, Lepr_expr, Krt14_expr, pseudotime, CSC_signature_score
+    UMAP_1, UMAP_2, Lepr_expr, Krt14_expr,
+    pseudotime, pseudotime_norm,
+    CSC_signature_score
   )
 
-write_csv(meta_export, file.path(PROCESSED_DIR, "scc_scRNA_K14pos_metadata_with_CSC_labels.csv"))
+write_csv(
+  meta_export,
+  file.path(PROCESSED_DIR, "scc_scRNA_K14pos_metadata_with_CSC_labels.csv")
+)
 
 summary_list <- list(
   n_cells_total = ncol(scc_obj),
