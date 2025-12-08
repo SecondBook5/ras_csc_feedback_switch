@@ -1,4 +1,4 @@
 Test,H1_prediction,Result,Metric
-Bistability (Ras hysteresis),Hysteresis loop exists,PASS,Max CSC gap = 0.536
-LEPR-axis perturbation,Perturbation collapses high-C state,PASS,ΔC = 0.522
-mTOR-axis perturbation,Perturbation collapses high-C state,PASS,ΔC = 0.495
+Bistability (Ras hysteresis),Hysteresis loop exists,PASS,Max CSC gap = 0.374
+LEPR-axis perturbation,Perturbation collapses high-C state,PASS,ΔC = 0.373
+mTOR-axis perturbation,Perturbation collapses high-C state,PASS,ΔC = 0.240

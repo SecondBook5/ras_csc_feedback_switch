@@ -739,7 +739,7 @@ meta_export <- meta_df %>%
   dplyr::select(
     cell_id, sample_id, seurat_clusters, louvain_cluster, is_CSC,
     UMAP_1, UMAP_2, Lepr_expr, Krt14_expr,
-    pseudotime = pseudotime_norm,
+    pseudotime_norm,  
     CSC_signature_score
   )
 

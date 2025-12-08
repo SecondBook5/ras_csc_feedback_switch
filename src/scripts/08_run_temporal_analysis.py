@@ -87,7 +87,7 @@ ROOT: Path = SRC_ROOT.parent
 CALIBRATION_DIR: Path = ROOT / "results" / "calibration"
 PARAM_JSON: Path = CALIBRATION_DIR / "optimized_parameters_CORRECTED.json"
 
-PROCESSED_DIR: Path = ROOT / "data" / "processed" / "omics_summaries"
+PROCESSED_DIR: Path = ROOT / "data" / "processed" / "scrna"
 RESULTS_MODEL_DIR: Path = ROOT / "results" / "model"
 RESULTS_TEMPORAL_DIR: Path = ROOT / "results" / "temporal"
 
@@ -96,6 +96,7 @@ FIG_TEMPORAL_DIR: Path = ROOT / "figures" / "temporal"
 
 #   ensure output directories exist
 RESULTS_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+RESULTS_TEMPORAL_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_TEMPORAL_DIR.mkdir(parents=True, exist_ok=True)
 FIG_TEMPORAL_DIR.mkdir(parents=True, exist_ok=True)
 
