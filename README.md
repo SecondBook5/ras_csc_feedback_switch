@@ -23,7 +23,7 @@ The dynamical system tracks:
 * **L** – Leptin
 * **M** – mTOR
 
-with the feedforward chain:
+with the feedback chain:
 
 > Ras → A → T → R → L → M → C, with CSCs feeding back to angiogenesis.
 
@@ -153,7 +153,7 @@ external/
 notebooks/
   scRNA_SCC_RasCSC_state_summary.ipynb  # Exploratory scRNA summaries (not used by pipeline)
 
-run_ras_csc_feedforward_hypothesis.sh   # One-click pipeline script (R + Python)
+run_ras_csc_feedback_hypothesis.sh   # One-click pipeline script (R + Python)
 requirements.txt                         # Python dependencies
 README.md
 ```
@@ -166,7 +166,7 @@ After installing R and Python dependencies:
 
 ```bash
 source .venv_ras-csc-switch-mm/bin/activate
-./run_ras_csc_feedforward_hypothesis.sh
+./run_ras_csc_feedback_hypothesis.sh
 ```
 
 This script performs, in order:

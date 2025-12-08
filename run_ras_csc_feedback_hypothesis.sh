@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# run_ras_csc_feedforward_hypothesis.sh
+# run_ras_csc_feedback_hypothesis.sh
 #
-# Run the full Ras–CSC feedforward loop hypothesis pipeline:
+# Run the full Ras–CSC feedback loop hypothesis pipeline:
 #   01_process_bulk_rnaseq.R
 #   02_process_scrna.R
 #   03_process_atacseq.R
@@ -23,7 +23,7 @@ set -euo pipefail
 trap 'echo "[ERROR] Pipeline failed at line $LINENO" >&2' ERR
 
 echo "======================================================================"
-echo "Ras–CSC Feedforward Loop Hypothesis Pipeline"
+echo "Ras–CSC feedback Loop Hypothesis Pipeline"
 echo "======================================================================"
 echo "Working directory: $(pwd)"
 echo
