@@ -12,7 +12,9 @@ The model predicts that perturbing angiogenesis or the LEPR–mTOR axis can coll
 
 ---
 
-## Model in one paragraph
+## Model 
+<img width="1353" height="791" alt="image" src="https://github.com/user-attachments/assets/a2359461-9a9e-488c-867a-9625dc68a2dc" />
+
 
 The dynamical system tracks:
 
