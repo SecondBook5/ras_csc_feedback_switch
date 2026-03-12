@@ -1,7 +1,5 @@
 # Ras–CSC Feedback Switch Model
 
-By AJ Book and Shrinithi Natarajan
-
 This repository implements a compact Ras–CSC–microenvironment model calibrated to the cutaneous SCC system of:
 
 > Yuan, S., Stewart, K.S., Yang, Y. et al. **Ras drives malignancy through stem cell crosstalk with the microenvironment.**
